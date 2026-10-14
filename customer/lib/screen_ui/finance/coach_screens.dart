@@ -87,10 +87,12 @@ class AiAssistantScreen extends StatelessWidget {
     try {
       config = await FinanceInvestmentService.config();
     } catch (_) {
-      config = null;
-    } finally {
+      // A failed read is not "not available": the user can try again.
       ShowToastDialog.closeLoader();
+      ShowToastDialog.showToast("Could not load this service. Check your connection and try again.".tr);
+      return;
     }
+    ShowToastDialog.closeLoader();
     if (config == null) {
       ShowToastDialog.showToast("Investments are not available yet.".tr);
       return;
@@ -153,30 +155,39 @@ class CoachScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<IntelligenceConfig?>(
-      future: FinanceIntelService.config(),
-      builder: (context, cfgSnap) {
-        final coach = cfgSnap.data?.coach;
-        if (cfgSnap.connectionState == ConnectionState.waiting || coach == null) {
+    // Loaded once (not at every rebuild); a failed read offers Retry.
+    return FinConfig<IntelligenceConfig>(
+      load: FinanceIntelService.config,
+      builder: (context, st) {
+        final coach = st.config?.coach;
+        if (coach == null) {
+          const String unavailable = "The financial coach is not available yet.";
           return FinScaffold(
             title: "Financial coach".tr,
-            body: FinBody(children: [
-              coach == null && cfgSnap.connectionState != ConnectionState.waiting
-                  ? FinState.empty(Icons.support_agent_rounded, "The financial coach is not available yet.".tr)
-                  : FinState.loading(),
-            ]),
+            body: FinBody(children: [st.placeholder(Icons.support_agent_rounded, unavailable.tr) ?? FinState.empty(Icons.support_agent_rounded, unavailable.tr)]),
           );
         }
-        return StreamBuilder<CoachConsent?>(
-          stream: FinanceIntelService.consent(),
-          builder: (context, cs) {
-            if (cs.connectionState == ConnectionState.waiting) {
-              return FinScaffold(title: "Financial coach".tr, body: FinBody(children: [FinState.loading()]));
-            }
-            final consent = cs.data;
-            if (consent == null || !consent.validFor(coach)) return _ConsentView(config: coach, renewing: consent != null && !consent.withdrawn);
-            return _Sessions(config: coach, consent: consent);
-          },
+        // Retry subscribes again: a failed stream does not recover by itself.
+        return StatefulBuilder(
+          builder: (context, refresh) => StreamBuilder<CoachConsent?>(
+            stream: FinanceIntelService.consent(),
+            builder: (context, cs) {
+              // An unreadable consent is an error, not a missing one: the
+              // consent is not asked again for it.
+              if (cs.hasError) {
+                return FinScaffold(
+                  title: "Financial coach".tr,
+                  body: FinBody(children: [FinState.error("Could not load this. Check your connection and try again.".tr, onRetry: () => refresh(() {}))]),
+                );
+              }
+              if (cs.connectionState == ConnectionState.waiting && !cs.hasData) {
+                return FinScaffold(title: "Financial coach".tr, body: FinBody(children: [FinState.loading()]));
+              }
+              final consent = cs.data;
+              if (consent == null || !consent.validFor(coach)) return _ConsentView(config: coach, renewing: consent != null && !consent.withdrawn);
+              return _Sessions(config: coach, consent: consent);
+            },
+          ),
         );
       },
     );
@@ -292,8 +303,8 @@ class _Sessions extends StatelessWidget {
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
               value: consent.shareSummary,
-              title: Text("Use my Spideli Finance totals".tr),
-              subtitle: Text("Only totals, never documents or transaction details.".tr),
+              title: Text("Use my Spideli Finance totals".tr, style: DsTypography.bodyStrong.copyWith(color: DsColors.of(context).textPrimary)),
+              subtitle: Text("Only totals, never documents or transaction details.".tr, style: DsTypography.bodySm.copyWith(color: DsColors.of(context).textSecondary)),
               onChanged: (v) async {
                 Get.back();
                 await FinanceUi.run(() => FinanceIntelService.setShareSummary(v));
@@ -304,7 +315,8 @@ class _Sessions extends StatelessWidget {
               label: "Stop using the coach".tr,
               icon: Icons.block_rounded,
               expand: true,
-              color: DsColors.of(context).danger,
+              // dangerStrong: readable as text on the sheet (danger is too light).
+              color: DsColors.of(context).dangerStrong,
               onPressed: () async {
                 Get.back();
                 // Two ways to stop: keep the conversations, or delete them too.
@@ -319,9 +331,11 @@ class _Sessions extends StatelessWidget {
                         children: [
                           Text("You can also delete all your conversations.".tr, style: DsTypography.body.copyWith(color: c.textSecondary)),
                           const DsGap(DsSpace.lg),
-                          DsButton.primary(label: "Stop".tr, expand: true, color: c.danger, onPressed: () => Get.back(result: 'keep')),
+                          // The weight follows what is lost: stopping keeps the
+                          // conversations, deleting them cannot be undone.
+                          DsButton.secondary(label: "Stop".tr, icon: Icons.block_rounded, expand: true, onPressed: () => Get.back(result: 'keep')),
                           const DsGap(DsSpace.sm),
-                          DsButton.dangerTonal(label: "Stop and delete".tr, icon: Icons.delete_outline_rounded, expand: true, onPressed: () => Get.back(result: 'delete')),
+                          DsButton.danger(label: "Stop and delete".tr, icon: Icons.delete_outline_rounded, expand: true, onPressed: () => Get.back(result: 'delete')),
                           DsButton.ghost(label: "Cancel".tr, expand: true, onPressed: () => Get.back()),
                         ],
                       );
@@ -351,43 +365,46 @@ class _Sessions extends StatelessWidget {
           onPressed: () => Get.to(() => CoachChatScreen(config: config)),
         ),
       ),
-      body: StreamBuilder<List<Map<String, dynamic>>>(
-        stream: FinanceIntelService.sessions(),
-        builder: (context, snap) {
-          if (snap.hasError) return FinBody(children: [FinState.error("Could not load your conversations.".tr)]);
-          if (!snap.hasData) return FinBody(children: [FinState.loading()]);
-          if (snap.data!.isEmpty) {
+      // Retry subscribes again: a failed stream does not recover by itself.
+      body: StatefulBuilder(
+        builder: (context, refresh) => StreamBuilder<List<Map<String, dynamic>>>(
+          stream: FinanceIntelService.sessions(),
+          builder: (context, snap) {
+            if (snap.hasError) return FinBody(children: [FinState.error("Could not load your conversations.".tr, onRetry: () => refresh(() {}))]);
+            if (!snap.hasData) return FinBody(children: [FinState.loading()]);
+            if (snap.data!.isEmpty) {
+              return FinBody(children: [
+                FinState.empty(
+                  Icons.support_agent_rounded,
+                  "Ask your first question".tr,
+                  message: "For example: how to build a monthly budget, how much to save for a goal, or how a tontine works.".tr,
+                ),
+              ]);
+            }
             return FinBody(children: [
-              FinState.empty(
-                Icons.support_agent_rounded,
-                "Ask your first question".tr,
-                message: "For example: how to build a monthly budget, how much to save for a goal, or how a tontine works.".tr,
+              FinSection(
+                top: 0,
+                divided: true,
+                padding: _listPadding,
+                footnote: "General guidance, not financial advice. The coach can be wrong and never moves money.".tr,
+                children: [
+                  for (final s in snap.data!)
+                    FinListTile(
+                      icon: Icons.chat_bubble_outline_rounded,
+                      iconTone: DsTone.brand,
+                      title: (s['title'] ?? '').toString().isEmpty ? CoachRules.topic(s['topic']?.toString() ?? 'general').tr : s['title'].toString(),
+                      subtitle: [
+                        if ((s['title'] ?? '').toString().isNotEmpty) CoachRules.topic(s['topic']?.toString() ?? 'general').tr,
+                        FinanceUi.date(s['updatedAt']),
+                      ].join(' · '),
+                      chevron: true,
+                      onTap: () => Get.to(() => CoachChatScreen(config: config, sessionId: s['id'].toString(), topic: s['topic']?.toString())),
+                    ),
+                ],
               ),
             ]);
-          }
-          return FinBody(children: [
-            FinSection(
-              top: 0,
-              divided: true,
-              padding: _listPadding,
-              footnote: "General guidance, not financial advice. The coach can be wrong and never moves money.".tr,
-              children: [
-                for (final s in snap.data!)
-                  FinListTile(
-                    icon: Icons.chat_bubble_outline_rounded,
-                    iconTone: DsTone.brand,
-                    title: (s['title'] ?? '').toString().isEmpty ? CoachRules.topic(s['topic']?.toString() ?? 'general').tr : s['title'].toString(),
-                    subtitle: [
-                      if ((s['title'] ?? '').toString().isNotEmpty) CoachRules.topic(s['topic']?.toString() ?? 'general').tr,
-                      FinanceUi.date(s['updatedAt']),
-                    ].join(' · '),
-                    chevron: true,
-                    onTap: () => Get.to(() => CoachChatScreen(config: config, sessionId: s['id'].toString(), topic: s['topic']?.toString())),
-                  ),
-              ],
-            ),
-          ]);
-        },
+          },
+        ),
       ),
     );
   }
@@ -412,6 +429,12 @@ class _CoachChatScreenState extends State<CoachChatScreen> {
   late String? _sessionId = widget.sessionId;
   late String _topic = widget.config.topics.contains(widget.topic) ? widget.topic! : widget.config.topics.first;
   String? _pending;
+
+  /// The messages of the session: subscribed once per session (again on Retry).
+  late Stream<List<Map<String, dynamic>>>? _messages = _sessionId == null ? null : FinanceIntelService.messages(_sessionId!);
+
+  /// The rows the list showed: it scrolls down only when one is added.
+  int _shown = -1;
 
   static const Map<String, List<String>> _starters = {
     'general': ["What can you help me with?", "How do I start managing my money better?"],
@@ -441,7 +464,12 @@ class _CoachChatScreenState extends State<CoachChatScreen> {
     });
     try {
       final id = await FinanceIntelService.send(sessionId: _sessionId, topic: _topic, text: t);
-      if (mounted) setState(() => _sessionId = id);
+      if (mounted && id != _sessionId) {
+        setState(() {
+          _sessionId = id;
+          _messages = FinanceIntelService.messages(id);
+        });
+      }
     } on FinanceException catch (e) {
       ShowToastDialog.showToast(FinanceErrors.messageKey(e.reason).tr);
       if (mounted && _input.text.isEmpty) _input.text = t;
@@ -456,6 +484,14 @@ class _CoachChatScreenState extends State<CoachChatScreen> {
   void _toBottom() => WidgetsBinding.instance.addPostFrameCallback((_) {
         if (_scroll.hasClients) _scroll.animateTo(_scroll.position.maxScrollExtent, duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
       });
+
+  /// The question before the last answer, to send again when that answer failed.
+  static String? _lastQuestion(List<Map<String, dynamic>> list) {
+    for (final m in list.reversed) {
+      if (m['role'] == 'user' && (m['text'] ?? '').toString().trim().isNotEmpty) return m['text'].toString();
+    }
+    return null;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -479,15 +515,33 @@ class _CoachChatScreenState extends State<CoachChatScreen> {
             child: _sessionId == null
                 ? _starterView(context)
                 : StreamBuilder<List<Map<String, dynamic>>>(
-                    stream: FinanceIntelService.messages(_sessionId!),
+                    stream: _messages,
                     builder: (context, snap) {
+                      const padding = EdgeInsets.fromLTRB(FinSpace.page, DsSpace.lg, FinSpace.page, DsSpace.lg);
+                      if (snap.hasError) {
+                        return ListView(padding: padding, children: [
+                          FinState.error(
+                            "Could not load this. Check your connection and try again.".tr,
+                            onRetry: () => setState(() => _messages = FinanceIntelService.messages(_sessionId!)),
+                          ),
+                        ]);
+                      }
+                      if (!snap.hasData && _pending == null) return ListView(padding: padding, children: [FinState.loading()]);
                       final list = snap.data ?? const [];
-                      _toBottom();
+                      final int rows = list.length + (_pending == null ? 0 : 2);
+                      if (rows != _shown) {
+                        _shown = rows;
+                        _toBottom();
+                      }
+                      // The last answer failed: it offers to ask the same question again.
+                      final bool lastFailed = _pending == null && list.isNotEmpty && list.last['role'] != 'user' && list.last['status'] == 'failed';
+                      final String? again = lastFailed ? _lastQuestion(list) : null;
                       return ListView(
                         controller: _scroll,
-                        padding: const EdgeInsets.fromLTRB(FinSpace.page, DsSpace.lg, FinSpace.page, DsSpace.lg),
+                        padding: padding,
                         children: [
-                          for (final m in list) _Bubble(message: m, sessionId: _sessionId!),
+                          for (final (i, m) in list.indexed)
+                            _Bubble(message: m, sessionId: _sessionId!, onRetry: again != null && i == list.length - 1 ? () => _send(again) : null),
                           if (_pending != null) ...[
                             _Bubble(message: {'role': 'user', 'text': _pending}, sessionId: ''),
                             const _Typing(),
@@ -551,45 +605,65 @@ class _CoachChatScreenState extends State<CoachChatScreen> {
 
   Widget _inputBar(BuildContext context) {
     final c = DsColors.of(context);
+    final int max = widget.config.maxMessageLength;
     return SafeArea(
       top: false,
       child: Container(
         decoration: BoxDecoration(color: c.isDark ? c.surfaceRaised : c.surface, border: Border(top: BorderSide(color: c.border))),
         padding: const EdgeInsets.fromLTRB(DsSpace.md, DsSpace.sm, DsSpace.sm, DsSpace.sm),
-        child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
-          Expanded(
-            child: TextField(
-              controller: _input,
-              minLines: 1,
-              maxLines: 4,
-              maxLength: widget.config.maxMessageLength,
-              textInputAction: TextInputAction.newline,
-              style: DsTypography.body.copyWith(color: c.textPrimary),
-              cursorColor: FinColors.brand(context),
-              decoration: InputDecoration(
-                hintText: "Ask a question".tr,
-                hintStyle: DsTypography.body.copyWith(color: c.textMuted),
-                counterText: '',
-                isDense: true,
-                filled: true,
-                fillColor: c.isDark ? c.surfaceAlt : FinColors.page(context),
-                contentPadding: const EdgeInsets.symmetric(horizontal: DsSpace.md, vertical: DsSpace.md),
-                border: OutlineInputBorder(borderRadius: FinSpace.br, borderSide: BorderSide(color: c.border)),
-                enabledBorder: OutlineInputBorder(borderRadius: FinSpace.br, borderSide: BorderSide(color: c.border)),
-                focusedBorder: OutlineInputBorder(borderRadius: FinSpace.br, borderSide: BorderSide(color: FinColors.brand(context), width: 1.4)),
-              ),
-            ),
+        child: ValueListenableBuilder<TextEditingValue>(
+          valueListenable: _input,
+          builder: (context, value, _) => Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // The count appears near the limit: typing is never cut off silently.
+              if (value.text.length >= max * 0.8)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: DsSpace.xs, right: DsSpace.xs, left: DsSpace.xs),
+                  child: Text(
+                    ltr('${value.text.length} / $max'),
+                    textAlign: TextAlign.end,
+                    style: DsTypography.caption.copyWith(color: value.text.length >= max ? c.dangerStrong : c.textSecondary).tabular,
+                  ),
+                ),
+              Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                Expanded(
+                  child: TextField(
+                    controller: _input,
+                    minLines: 1,
+                    maxLines: 4,
+                    maxLength: max,
+                    textInputAction: TextInputAction.newline,
+                    style: DsTypography.body.copyWith(color: c.textPrimary),
+                    cursorColor: FinColors.brand(context),
+                    decoration: InputDecoration(
+                      hintText: "Ask a question".tr,
+                      hintStyle: DsTypography.body.copyWith(color: c.textMuted),
+                      counterText: '',
+                      isDense: true,
+                      filled: true,
+                      fillColor: c.isDark ? c.surfaceAlt : FinColors.page(context),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: DsSpace.md, vertical: DsSpace.md),
+                      border: OutlineInputBorder(borderRadius: FinSpace.br, borderSide: BorderSide(color: c.border)),
+                      enabledBorder: OutlineInputBorder(borderRadius: FinSpace.br, borderSide: BorderSide(color: c.border)),
+                      focusedBorder: OutlineInputBorder(borderRadius: FinSpace.br, borderSide: BorderSide(color: FinColors.brand(context), width: 1.4)),
+                    ),
+                  ),
+                ),
+                const DsGap(DsSpace.sm),
+                DsIconButton(
+                  icon: Icons.send_rounded,
+                  semanticLabel: "Send".tr,
+                  variant: DsIconButtonVariant.filled,
+                  // While an answer is pending the button reads as disabled, not as a navy action.
+                  color: _pending == null ? null : c.surfaceAlt,
+                  onPressed: _pending == null ? () => _send() : null,
+                ),
+              ]),
+            ],
           ),
-          const DsGap(DsSpace.sm),
-          DsIconButton(
-            icon: Icons.send_rounded,
-            semanticLabel: "Send".tr,
-            variant: DsIconButtonVariant.filled,
-            // While an answer is pending the button reads as disabled, not as a navy action.
-            color: _pending == null ? null : c.surfaceAlt,
-            onPressed: _pending == null ? () => _send() : null,
-          ),
-        ]),
+        ),
       ),
     );
   }
@@ -599,7 +673,10 @@ class _Bubble extends StatefulWidget {
   final Map<String, dynamic> message;
   final String sessionId;
 
-  const _Bubble({required this.message, required this.sessionId});
+  /// On a failed answer: asks the same question again.
+  final VoidCallback? onRetry;
+
+  const _Bubble({required this.message, required this.sessionId, this.onRetry});
 
   @override
   State<_Bubble> createState() => _BubbleState();
@@ -639,18 +716,24 @@ class _BubbleState extends State<_Bubble> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (failed)
+              if (failed) ...[
                 Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Padding(padding: const EdgeInsets.only(top: 2), child: Icon(Icons.error_outline_rounded, size: 18, color: c.dangerStrong)),
+                  Padding(padding: const EdgeInsets.only(top: DsSpace.xxs), child: Icon(Icons.error_outline_rounded, size: 18, color: c.dangerStrong)),
                   const DsGap(DsSpace.sm),
                   Expanded(child: SelectableText("The coach could not answer. Please try again.".tr, style: DsTypography.body.copyWith(color: c.textPrimary))),
-                ])
-              else
+                ]),
+                if (widget.onRetry != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: DsSpace.sm),
+                    child: DsButton.secondary(label: "Try again".tr, icon: Icons.refresh_rounded, size: DsButtonSize.sm, onPressed: widget.onRetry),
+                  ),
+              ] else
                 SelectableText(m['text']?.toString() ?? '', style: DsTypography.body.copyWith(color: foreground, height: 1.45)),
+              // Opens a screen of the app (an arrow, not "open in a new window").
               for (final a in actions)
                 Padding(
                   padding: const EdgeInsets.only(top: DsSpace.sm),
-                  child: DsButton.secondary(label: a.label, icon: Icons.open_in_new_rounded, size: DsButtonSize.sm, onPressed: () => _openTarget(a.target)),
+                  child: DsButton.secondary(label: a.label, trailingIcon: Icons.arrow_forward_rounded, size: DsButtonSize.sm, onPressed: () => _openTarget(a.target)),
                 ),
               if (!mine && !failed && widget.sessionId.isNotEmpty && m['id'] != null)
                 Padding(
@@ -659,24 +742,30 @@ class _BubbleState extends State<_Bubble> {
                     if (at != null) Text(ltr(DateFormat('HH:mm').format(at)), style: DsTypography.caption.copyWith(color: c.textMuted).tabular),
                     const DsGap(DsSpace.sm),
                     for (final helpful in [true, false])
-                      IconButton(
-                        visualDensity: VisualDensity.compact,
-                        tooltip: (helpful ? "Helpful" : "Not helpful").tr,
-                        icon: Icon(
-                          helpful ? (_rated == true ? Icons.thumb_up_alt_rounded : Icons.thumb_up_alt_outlined) : (_rated == false ? Icons.thumb_down_alt_rounded : Icons.thumb_down_alt_outlined),
-                          size: 16,
-                          color: _rated == helpful ? brand : c.textSecondary,
+                      // 48dp targets; the chosen rating is announced as selected.
+                      MergeSemantics(
+                        child: Semantics(
+                          selected: _rated == helpful,
+                          child: IconButton(
+                            constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+                            tooltip: (helpful ? "Helpful" : "Not helpful").tr,
+                            icon: Icon(
+                              helpful ? (_rated == true ? Icons.thumb_up_alt_rounded : Icons.thumb_up_alt_outlined) : (_rated == false ? Icons.thumb_down_alt_rounded : Icons.thumb_down_alt_outlined),
+                              size: 18,
+                              color: _rated == helpful ? brand : c.textSecondary,
+                            ),
+                            onPressed: _rated != null
+                                ? null
+                                : () async {
+                                    setState(() => _rated = helpful);
+                                    try {
+                                      await FinanceIntelService.feedback(widget.sessionId, m['id'].toString(), helpful);
+                                    } catch (_) {
+                                      // Feedback is best effort.
+                                    }
+                                  },
+                          ),
                         ),
-                        onPressed: _rated != null
-                            ? null
-                            : () async {
-                                setState(() => _rated = helpful);
-                                try {
-                                  await FinanceIntelService.feedback(widget.sessionId, m['id'].toString(), helpful);
-                                } catch (_) {
-                                  // Feedback is best effort.
-                                }
-                              },
                       ),
                   ]),
                 ),

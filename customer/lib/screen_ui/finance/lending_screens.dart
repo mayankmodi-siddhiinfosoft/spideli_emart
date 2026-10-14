@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:customer/screen_ui/finance/fin_ds.dart';
 import 'package:customer/screen_ui/finance/finance_ui.dart';
 import 'package:customer/screen_ui/finance/finance_widgets.dart';
+import 'package:customer/screen_ui/finance/tontine_screens.dart';
 import 'package:customer/service/finance_group_service.dart';
 import 'package:customer/service/finance_lending_service.dart';
 import 'package:customer/service/finance_service.dart';
@@ -12,6 +13,7 @@ import 'package:customer/utils/finance_group_rules.dart';
 import 'package:customer/utils/finance_lending_rules.dart';
 import 'package:customer/utils/finance_rules.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show PlatformException;
 import 'package:get/get.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
@@ -24,11 +26,14 @@ String _pctOf(dynamic v) => v is num ? _pct(v) : (v == null ? '-' : '$v%');
 
 String _date(DateTime? d) => d == null ? '-' : ltr(DateFormat('dd MMM yyyy').format(d));
 
+String _monthsLabel(int n) => FinanceUi.count(n, "month", "months");
+
 /// Inner padding of a form section (each field carries its own bottom spacing).
 const EdgeInsets _formPadding = EdgeInsets.all(DsSpace.lg);
 
 /// Spideli Finance > Loans: borrow from, and lend to, the members of your
-/// groups. `platform_settings/lending` must exist (admin).
+/// groups. `platform_settings/lending` must exist (admin), else "not
+/// available"; a failed read offers Retry.
 class LoansScreen extends StatefulWidget {
   /// The tab it opens on: 0 borrow, 1 group requests, 2 lent.
   final int initialTab;
@@ -42,19 +47,17 @@ class LoansScreen extends StatefulWidget {
 class _LoansScreenState extends State<LoansScreen> {
   late int _tab = widget.initialTab.clamp(0, 2);
 
-  /// Read once, so switching tabs does not reload the configuration.
-  late final Future<LendingConfig?> _config = FinanceLendingService.config();
-
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<LendingConfig?>(
-      future: _config,
-      builder: (context, cfgSnap) {
-        final cfg = cfgSnap.data;
-        final bool loading = cfgSnap.connectionState == ConnectionState.waiting;
+    // Read once, so switching tabs does not reload the configuration.
+    return FinConfig<LendingConfig>(
+      load: FinanceLendingService.config,
+      builder: (context, st) {
+        final cfg = st.config;
+        final Widget? placeholder = st.placeholder(Icons.handshake_outlined, "Loans are not available yet.".tr);
         return FinScaffold(
           title: "Loan".tr,
-          bottomBar: cfg == null || _tab != 0
+          bottomBar: !st.ready || _tab != 0
               ? null
               : DsStickyBar(
                   child: DsButton.primary(
@@ -62,28 +65,28 @@ class _LoansScreenState extends State<LoansScreen> {
                     icon: Icons.add_rounded,
                     size: DsButtonSize.lg,
                     expand: true,
-                    onPressed: () => Get.to(() => LoanApplyScreen(config: cfg)),
+                    onPressed: () => Get.to(() => LoanApplyScreen(config: cfg!)),
                   ),
                 ),
           body: FinBody(
             children: [
-              if (loading)
-                FinState.loading()
-              else if (cfg == null)
-                FinState.empty(Icons.handshake_outlined, "Loans are not available yet.".tr)
+              if (placeholder != null)
+                placeholder
               else ...[
                 DsSegmentedTabs(
+                  scrollable: true,
                   segments: [DsSegment("Borrow".tr), DsSegment("Group requests".tr), DsSegment("Lent".tr)],
                   index: _tab,
                   onChanged: (i) => setState(() => _tab = i),
                 ),
                 _LoanList(
                   key: ValueKey(_tab),
-                  stream: switch (_tab) {
-                    0 => FinanceLendingService.borrowed(),
-                    1 => FinanceLendingService.groupRequests(),
-                    _ => FinanceLendingService.lent(),
+                  load: switch (_tab) {
+                    0 => FinanceLendingService.borrowed,
+                    1 => FinanceLendingService.groupRequests,
+                    _ => FinanceLendingService.lent,
                   },
+                  lent: _tab == 2,
                   empty: switch (_tab) {
                     0 => "You have no loan request.",
                     1 => "No loan request in your groups.",
@@ -99,40 +102,70 @@ class _LoansScreenState extends State<LoansScreen> {
   }
 }
 
-class _LoanList extends StatelessWidget {
-  final Stream<List<Loan>> stream;
+class _LoanList extends StatefulWidget {
+  final Stream<List<Loan>> Function() load;
   final String empty;
 
-  const _LoanList({super.key, required this.stream, required this.empty});
+  /// The loans the user funded: each row says what they lent.
+  final bool lent;
+
+  const _LoanList({super.key, required this.load, required this.empty, this.lent = false});
+
+  @override
+  State<_LoanList> createState() => _LoanListState();
+}
+
+class _LoanListState extends State<_LoanList> {
+  late Stream<List<Loan>> _stream = widget.load();
 
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<List<Loan>>(
-      stream: stream,
+      stream: _stream,
       builder: (context, snap) {
-        if (snap.hasError) return FinState.error("Could not load the loans.".tr);
+        if (snap.hasError) return FinState.error("Could not load the loans.".tr, onRetry: () => setState(() => _stream = widget.load()));
         if (!snap.hasData) return FinState.loading();
         final loans = snap.data!;
-        if (loans.isEmpty) return FinState.empty(Icons.handshake_outlined, empty.tr);
+        if (loans.isEmpty) return FinState.empty(Icons.handshake_outlined, widget.empty.tr);
         return FinSection(
           top: DsSpace.lg,
           divided: true,
           padding: const EdgeInsets.symmetric(horizontal: DsSpace.lg),
-          children: [for (final l in loans) _LoanTile(loan: l)],
+          children: [for (final l in loans) _LoanTile(loan: l, lent: widget.lent)],
         );
       },
     );
   }
 }
 
-/// One loan in a list: purpose, terms, amount and status.
+/// One loan in a list: purpose, terms, amount and status; on the "Lent"
+/// tab, what the user lent (their own fundings).
 class _LoanTile extends StatelessWidget {
   final Loan loan;
+  final bool lent;
 
-  const _LoanTile({required this.loan});
+  const _LoanTile({required this.loan, this.lent = false});
+
+  /// "You lent 5 000 XAF", or the amount still being confirmed; null when none.
+  static String? _myLending(List<Map<String, dynamic>> fundings, String currency) {
+    int sum(bool Function(String) f) => fundings.where((x) => f(x['status']?.toString() ?? '')).fold(0, (s, x) => s + FinanceSummary.intOf(x['amount']));
+    final int done = sum((s) => s == 'succeeded');
+    final int confirming = sum((s) => s == 'pending' || s == 'processing');
+    if (done > 0) return '${"You lent".tr} ${FinanceMoney.format(done, currency)}';
+    if (confirming > 0) return "@amount being confirmed".trParams({'amount': FinanceMoney.format(confirming, currency)});
+    return null;
+  }
 
   @override
   Widget build(BuildContext context) {
+    if (!lent) return _tile(null);
+    return StreamBuilder<List<Map<String, dynamic>>>(
+      stream: FinanceLendingService.myFundings(loan.id),
+      builder: (context, snap) => _tile(snap.data == null ? null : _myLending(snap.data!, loan.currency)),
+    );
+  }
+
+  Widget _tile(String? mine) {
     final l = loan;
     final bool late = l.status == 'overdue' || l.status == 'defaulted';
     final bool closed = l.status == 'rejected' || l.status == 'cancelled';
@@ -141,8 +174,9 @@ class _LoanTile extends StatelessWidget {
       iconTone: late ? DsTone.danger : (closed ? DsTone.neutral : DsTone.brand),
       title: GroupLabels.purpose(l.purpose).tr,
       subtitle: [
-        '${l.durationMonths} ${"months".tr}',
+        _monthsLabel(l.durationMonths),
         if (l.groupName.isNotEmpty) l.groupName,
+        ?mine,
         if (l.outstandingAmount > 0) '${"Still to repay".tr} ${FinanceMoney.format(l.outstandingAmount, l.currency)}',
       ].join(' · '),
       amount: FinanceMoney.format(l.amount, l.currency),
@@ -152,6 +186,18 @@ class _LoanTile extends StatelessWidget {
       onTap: () => Get.to(() => LoanScreen(loanId: l.id)),
     );
   }
+}
+
+/// A supporting photo of a loan request: sent once registered on the loan.
+class _Doc {
+  final File file;
+
+  /// Its number in the names sent to the server ("Document 2"), fixed once
+  /// the request is created so a retry keeps the same names.
+  int? number;
+  bool sent = false;
+
+  _Doc(this.file);
 }
 
 /// A loan request: group, amount, terms and an estimated schedule.
@@ -165,6 +211,8 @@ class LoanApplyScreen extends StatefulWidget {
 }
 
 class _LoanApplyScreenState extends State<LoanApplyScreen> {
+  static const int _maxDocuments = 5;
+
   final _amount = TextEditingController();
   final _description = TextEditingController();
   late String _currency = widget.config.currencies.first;
@@ -173,7 +221,15 @@ class _LoanApplyScreenState extends State<LoanApplyScreen> {
   late String _frequency = widget.config.repaymentFrequencies.first;
   String? _groupId;
   bool _showSchedule = false;
-  final List<File> _documents = [];
+  final List<_Doc> _documents = [];
+  late Stream<List<Tontine>> _groups = FinanceGroupService.myTontines();
+
+  /// The request the server created. Once set, a retry only sends the
+  /// documents still missing: the request is never sent twice.
+  String? _loanId;
+
+  /// The request or the document upload is under way: a second tap is ignored.
+  bool _applying = false;
 
   @override
   void dispose() {
@@ -182,43 +238,106 @@ class _LoanApplyScreenState extends State<LoanApplyScreen> {
     super.dispose();
   }
 
-  Future<void> _addDocument() async {
-    final picked = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 85, maxWidth: 2400);
-    if (picked != null) setState(() => _documents.add(File(picked.path)));
+  /// The amount, when valid and within the configured limits.
+  int? get _validAmount {
+    final int? v = FinanceAmount.parse(_amount.text, _currency);
+    final int? max = widget.config.maxFor(_currency);
+    return v == null || v < widget.config.minFor(_currency) || (max != null && v > max) ? null : v;
+  }
+
+  List<String> _missing() => [
+        if (_groupId == null) "Group".tr,
+        if (_validAmount == null) "Amount".tr,
+      ];
+
+  Future<void> _addDocument(ImageSource source) async {
+    try {
+      final picked = await ImagePicker().pickImage(source: source, imageQuality: 85, maxWidth: 2400);
+      if (picked != null && mounted) setState(() => _documents.add(_Doc(File(picked.path))));
+    } on PlatformException catch (e) {
+      final bool denied = e.code.contains('denied');
+      ShowToastDialog.showToast((denied
+              ? (source == ImageSource.camera
+                  ? "Allow access to the camera in your phone settings to take a photo."
+                  : "Allow access to your photos in your phone settings to add a document.")
+              : "Could not add this photo. Please try again.")
+          .tr);
+    } catch (_) {
+      ShowToastDialog.showToast("Could not add this photo. Please try again.".tr);
+    }
   }
 
   Future<void> _submit() async {
-    final cfg = widget.config;
-    final int? amount = FinanceAmount.parse(_amount.text, _currency);
-    if (_groupId == null) return ShowToastDialog.showToast("Choose the group whose members will vote on your request.".tr);
-    if (amount == null || amount < cfg.minFor(_currency) || (cfg.maxFor(_currency) != null && amount > cfg.maxFor(_currency)!)) {
-      return ShowToastDialog.showToast(
-          "${"The amount must be between".tr} ${FinanceMoney.format(cfg.minFor(_currency), _currency)} ${"and".tr} ${cfg.maxFor(_currency) == null ? '-' : FinanceMoney.format(cfg.maxFor(_currency)!, _currency)}.");
+    final int? amount = _validAmount;
+    // `loanApply` takes no idempotency key: a double tap must not send it twice.
+    if (_applying) return;
+    if (_loanId == null) {
+      if (_missing().isNotEmpty || amount == null) return;
+      String? id;
+      _applying = true;
+      final ok = await FinanceUi.run(() async {
+        id = await FinanceLendingService.apply(
+          amount: amount,
+          currency: _currency,
+          purpose: _purpose,
+          durationMonths: _months,
+          repaymentFrequency: _frequency,
+          groupId: _groupId!,
+          description: _description.text.trim(),
+        );
+      });
+      _applying = false;
+      if (!ok || id == null || !mounted) return;
+      setState(() {
+        _loanId = id;
+        for (final (i, d) in _documents.indexed) {
+          d.number = i + 1;
+        }
+      });
     }
-    String? id;
-    final ok = await FinanceUi.run(() async {
-      id = await FinanceLendingService.apply(
-        amount: amount,
-        currency: _currency,
-        purpose: _purpose,
-        durationMonths: _months,
-        repaymentFrequency: _frequency,
-        groupId: _groupId!,
-        description: _description.text.trim(),
-      );
-      for (int i = 0; i < _documents.length; i++) {
-        await FinanceLendingService.addDocument(id!, _documents[i], '${"Document".tr} ${i + 1}');
+    await _sendDocuments();
+  }
+
+  /// Registers every document not sent yet; a failed one stays to retry.
+  Future<void> _sendDocuments() async {
+    final String id = _loanId!;
+    final pending = _documents.where((d) => !d.sent).toList();
+    if (_applying) return;
+    if (pending.isNotEmpty) {
+      _applying = true;
+      ShowToastDialog.showLoader("Please wait...".tr);
+      for (final d in pending) {
+        try {
+          await FinanceLendingService.addDocument(id, d.file, '${"Document".tr} ${d.number}');
+          d.sent = true;
+        } catch (_) {
+          // Kept for "Try again"; the others are still sent.
+        }
       }
-    }, success: "Loan request sent");
-    if (ok && id != null) Get.off(() => LoanScreen(loanId: id!));
+      ShowToastDialog.closeLoader();
+      _applying = false;
+    }
+    if (!mounted) return;
+    if (_documents.every((d) => d.sent)) {
+      _open();
+    } else {
+      setState(() {});
+    }
+  }
+
+  void _open() {
+    ShowToastDialog.showToast("Loan request sent".tr);
+    Get.off(() => LoanScreen(loanId: _loanId!));
   }
 
   @override
   Widget build(BuildContext context) {
     final cfg = widget.config;
-    final int? amount = FinanceAmount.parse(_amount.text, _currency);
-    final int? max = cfg.maxFor(_currency);
+    final int? amount = _validAmount;
     final now = DateTime.now();
+    final bool sent = _loanId != null;
+    final int unsent = _documents.where((d) => !d.sent).length;
+    final missing = _missing();
     final estimate = amount == null
         ? null
         : LoanCalculator.estimate(
@@ -233,89 +352,89 @@ class _LoanApplyScreenState extends State<LoanApplyScreen> {
     return FinScaffold(
       title: "Request a loan".tr,
       bottomBar: DsStickyBar(
-        child: FinanceKycGate(
-          builder: (context, verified) => DsButton.primary(label: "Send my request".tr, size: DsButtonSize.lg, expand: true, onPressed: verified ? _submit : null),
-        ),
+        child: sent
+            // The request exists; only documents are left to send.
+            ? Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  DsButton.primary(label: "Try again".tr, icon: Icons.refresh_rounded, size: DsButtonSize.lg, expand: true, onPressed: _sendDocuments),
+                  DsButton.ghost(label: "Continue without them".tr, expand: true, onPressed: () => Get.off(() => LoanScreen(loanId: _loanId!))),
+                ],
+              )
+            : FinanceKycGate(
+                builder: (context, verified) => Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    FinMissing(missing),
+                    DsButton.primary(label: "Send my request".tr, size: DsButtonSize.lg, expand: true, onPressed: verified && missing.isEmpty ? _submit : null),
+                  ],
+                ),
+              ),
       ),
       body: FinBody(
         children: [
-          StreamBuilder<List<Tontine>>(
-            stream: FinanceGroupService.myTontines(),
-            builder: (context, snap) {
-              final groups = (snap.data ?? const <Tontine>[]).where((t) => t.isActive || t.isForming).toList();
-              return FinSection(
-                title: "Group".tr,
-                top: 0,
-                padding: _formPadding,
+          if (sent)
+            Padding(
+              padding: const EdgeInsets.only(bottom: DsSpace.lg),
+              child: DsInlineAlert(
+                tone: DsTone.warning,
+                title: "Your loan request was sent".tr,
+                message: "@n of your documents could not be added. Try again, or continue without them.".trParams({'n': '$unsent'}),
+              ),
+            ),
+          // Once the request is sent its terms can no longer change here.
+          IgnorePointer(
+            ignoring: sent,
+            child: Opacity(
+              opacity: sent ? 0.6 : 1,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  _Hint("The members of this group vote on your request and can fund it.".tr),
-                  if (snap.hasData && groups.isEmpty)
-                    DsInlineAlert(tone: DsTone.warning, message: "You need to belong to a tontine group to borrow from its members.".tr)
-                  else
-                    DsDropdown<String>(
-                      label: "Group".tr,
-                      requiredMark: true,
-                      value: _groupId,
-                      items: [for (final g in groups) DropdownMenuItem(value: g.id, child: Text(g.name))],
-                      onChanged: (v) => setState(() => _groupId = v),
-                      bottomSpacing: 0,
-                    ),
-                ],
-              );
-            },
-          ),
-          FinSection(
-            title: "Loan".tr,
-            padding: _formPadding,
-            children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: DsTextField(
-                      label: "Amount".tr,
-                      controller: _amount,
-                      requiredMark: true,
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                      // The allowed range, before the user is refused.
-                      helper: max == null ? null : '${FinanceMoney.format(cfg.minFor(_currency), _currency)} – ${FinanceMoney.format(max, _currency)}',
-                      onChanged: (_) => setState(() {}),
-                    ),
+                  _groupSection(),
+                  FinSection(
+                    title: "Loan".tr,
+                    padding: _formPadding,
+                    children: [
+                      FinAmountField(
+                        label: "Amount".tr,
+                        controller: _amount,
+                        currency: _currency,
+                        currencies: cfg.currencies,
+                        onCurrencyChanged: (v) => setState(() => _currency = v),
+                        // The allowed range, before the user is refused.
+                        min: cfg.minFor(_currency),
+                        max: cfg.maxFor(_currency),
+                        onChanged: (_) => setState(() {}),
+                      ),
+                      DsDropdown<String>(
+                        label: "Purpose".tr,
+                        value: _purpose,
+                        items: [for (final p in cfg.purposes) DropdownMenuItem(value: p, child: Text(GroupLabels.purpose(p).tr))],
+                        onChanged: (v) => setState(() => _purpose = v ?? _purpose),
+                      ),
+                      DsFieldLabel("Duration".tr, required: true),
+                      Wrap(
+                        spacing: DsSpace.sm,
+                        runSpacing: DsSpace.xs,
+                        children: [
+                          for (final m in cfg.durationsMonths) ChoiceChip(label: Text(_monthsLabel(m)), selected: _months == m, onSelected: (_) => setState(() => _months = m)),
+                        ],
+                      ),
+                      const DsGap(DsSpace.md),
+                      DsDropdown<String>(
+                        label: "Repayments".tr,
+                        value: _frequency,
+                        items: [for (final f in cfg.repaymentFrequencies) DropdownMenuItem(value: f, child: Text(Frequency.label(f).tr))],
+                        onChanged: (v) => setState(() => _frequency = v ?? _frequency),
+                      ),
+                      DsTextField(label: "Why do you need this loan?".tr, controller: _description, maxLines: 3, bottomSpacing: 0),
+                    ],
                   ),
-                  const DsGap(DsSpace.sm),
-                  SizedBox(
-                    width: 110,
-                    child: DsDropdown<String>(
-                      label: "Currency".tr,
-                      value: _currency,
-                      items: [for (final c in cfg.currencies) DropdownMenuItem(value: c, child: Text(c))],
-                      onChanged: (v) => setState(() => _currency = v ?? _currency),
-                    ),
-                  ),
                 ],
               ),
-              DsDropdown<String>(
-                label: "Purpose".tr,
-                value: _purpose,
-                items: [for (final p in cfg.purposes) DropdownMenuItem(value: p, child: Text(GroupLabels.purpose(p).tr))],
-                onChanged: (v) => setState(() => _purpose = v ?? _purpose),
-              ),
-              DsFieldLabel("Duration".tr),
-              Wrap(
-                spacing: DsSpace.sm,
-                children: [
-                  for (final m in cfg.durationsMonths) ChoiceChip(label: Text('$m ${"months".tr}'), selected: _months == m, onSelected: (_) => setState(() => _months = m)),
-                ],
-              ),
-              const DsGap(DsSpace.md),
-              DsDropdown<String>(
-                label: "Repayments".tr,
-                value: _frequency,
-                items: [for (final f in cfg.repaymentFrequencies) DropdownMenuItem(value: f, child: Text(Frequency.label(f).tr))],
-                onChanged: (v) => setState(() => _frequency = v ?? _frequency),
-              ),
-              DsTextField(label: "Why do you need this loan?".tr, controller: _description, maxLines: 3, bottomSpacing: 0),
-            ],
+            ),
           ),
           if (estimate != null) ...[
             FinSection(
@@ -350,22 +469,29 @@ class _LoanApplyScreenState extends State<LoanApplyScreen> {
           FinSection(
             title: "Supporting documents (optional)".tr,
             divided: true,
-            footnote: "Payslips, invoices, a business plan... Only the reviewers and your group's voters see them.".tr,
+            footnote:
+                '${"Payslips, invoices, a business plan... Only the reviewers and your group's voters see them.".tr} ${"Up to @n photos.".trParams({'n': '$_maxDocuments'})}',
             children: [
-              for (final (i, f) in _documents.indexed)
+              for (final (i, d) in _documents.indexed)
                 FinListTile(
-                  icon: Icons.image_outlined,
-                  iconTone: DsTone.brand,
-                  title: '${"Document".tr} ${i + 1}',
-                  subtitle: f.path.split('/').last,
-                  trailing: DsIconButton(icon: Icons.close_rounded, semanticLabel: "Remove".tr, onPressed: () => setState(() => _documents.removeAt(i))),
+                  icon: d.sent ? Icons.check_circle_rounded : Icons.image_outlined,
+                  iconTone: d.sent ? DsTone.success : (sent ? DsTone.warning : DsTone.brand),
+                  title: '${"Document".tr} ${d.number ?? i + 1}',
+                  subtitle: sent ? (d.sent ? "Added".tr : "Not added yet".tr) : null,
+                  trailing: d.sent
+                      ? null
+                      : DsIconButton(icon: Icons.close_rounded, semanticLabel: "Remove".tr, onPressed: () => setState(() => _documents.removeAt(i))),
                 ),
-              if (_documents.length < 5)
+              if (!sent && _documents.length < _maxDocuments)
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: DsSpace.xs),
-                  child: Align(
-                    alignment: AlignmentDirectional.centerStart,
-                    child: DsButton.ghost(label: "Add a photo".tr, icon: Icons.add_a_photo_outlined, onPressed: _addDocument),
+                  child: Wrap(
+                    spacing: DsSpace.sm,
+                    runSpacing: DsSpace.xs,
+                    children: [
+                      DsButton.ghost(label: "Camera".tr, icon: Icons.photo_camera_outlined, onPressed: () => _addDocument(ImageSource.camera)),
+                      DsButton.ghost(label: "Gallery".tr, icon: Icons.photo_library_outlined, onPressed: () => _addDocument(ImageSource.gallery)),
+                    ],
                   ),
                 ),
             ],
@@ -374,32 +500,89 @@ class _LoanApplyScreenState extends State<LoanApplyScreen> {
       ),
     );
   }
+
+  /// The group whose members vote: loading, failed (Retry), none (go to the
+  /// tontines), or the choice.
+  Widget _groupSection() {
+    return StreamBuilder<List<Tontine>>(
+      stream: _groups,
+      builder: (context, snap) {
+        final groups = (snap.data ?? const <Tontine>[]).where((t) => t.isActive || t.isForming).toList();
+        final Widget field;
+        if (snap.hasError) {
+          field = DsInlineAlert(
+            tone: DsTone.danger,
+            message: "Could not load your groups.".tr,
+            actionLabel: "Try again".tr,
+            onAction: () => setState(() => _groups = FinanceGroupService.myTontines()),
+          );
+        } else if (!snap.hasData) {
+          field = DsDropdown<String>(label: "Group".tr, requiredMark: true, hint: "Loading your groups...".tr, value: null, items: const [], onChanged: null, bottomSpacing: 0);
+        } else if (groups.isEmpty) {
+          field = DsInlineAlert(
+            tone: DsTone.warning,
+            message: "You need to belong to a tontine group to borrow from its members.".tr,
+            actionLabel: "Open tontines".tr,
+            onAction: () => Get.to(() => const TontineListScreen()),
+          );
+        } else {
+          field = FinPickerField<String>(
+            label: "Group".tr,
+            requiredMark: true,
+            value: _groupId,
+            options: [for (final g in groups) (g.id, g.name)],
+            onChanged: (v) => setState(() => _groupId = v),
+          );
+        }
+        return FinSection(
+          title: "Group".tr,
+          top: 0,
+          padding: _formPadding,
+          children: [_Hint("The members of this group vote on your request and can fund it.".tr), field],
+        );
+      },
+    );
+  }
 }
 
-/// One loan, for its borrower and for the members of its group.
-class LoanScreen extends StatelessWidget {
+/// One loan, for its borrower and for the members of its group. A loan that
+/// no longer exists says so; a failed read offers Retry.
+class LoanScreen extends StatefulWidget {
   final String loanId;
 
   const LoanScreen({super.key, required this.loanId});
 
   @override
+  State<LoanScreen> createState() => _LoanScreenState();
+}
+
+class _LoanScreenState extends State<LoanScreen> {
+  late Stream<Loan?> _loan = FinanceLendingService.loan(widget.loanId);
+  late final Stream<List<Map<String, dynamic>>> _schedule = FinanceLendingService.schedule(widget.loanId);
+
+  /// Read once; without it the loan still shows (wallet payments only).
+  late final Future<LendingConfig?> _config = FinanceLendingService.config().catchError((_) => null);
+
+  @override
   Widget build(BuildContext context) {
     return FutureBuilder<LendingConfig?>(
-      future: FinanceLendingService.config(),
+      future: _config,
       builder: (context, cfgSnap) => StreamBuilder<Loan?>(
-        stream: FinanceLendingService.loan(loanId),
+        stream: _loan,
         builder: (context, snap) {
           final l = snap.data;
-          if (snap.hasError || l == null) {
-            return FinScaffold(
-              title: "Loan".tr,
-              body: FinBody(children: [snap.hasError ? FinState.error("Could not load this loan.".tr) : FinState.loading(rows: 4)]),
-            );
+          final Widget? state = FinState.of(
+            snap,
+            gone: "This loan is no longer available.",
+            onRetry: () => setState(() => _loan = FinanceLendingService.loan(widget.loanId)),
+          );
+          if (state != null || l == null) {
+            return FinScaffold(title: "Loan".tr, body: FinBody(children: [state ?? FinState.loading(rows: 4)]));
           }
           final methods = cfgSnap.data?.paymentMethods ?? const ['wallet'];
           // The binding schedule (borrower and lenders only; empty for the others).
           return StreamBuilder<List<Map<String, dynamic>>>(
-            stream: FinanceLendingService.schedule(l.id),
+            stream: _schedule,
             builder: (context, ss) {
               final installments = ss.data ?? const <Map<String, dynamic>>[];
               final bool repay = installments.isNotEmpty && LoanActions.canRepay(l, FinanceService.uid);
@@ -445,11 +628,11 @@ class _LoanBody extends StatelessWidget {
           ),
         if (borrower) _Assessment(loanId: l.id),
         if (l.status == 'voting') _Voting(loan: l, config: config),
-        if (l.status == 'funding' || l.lenderIds.contains(uid)) _Funding(loan: l, methods: methods),
-        _Agreement(loan: l),
+        if (l.status == 'funding' || l.lenderIds.contains(uid)) _Funding(loan: l, methods: methods, config: config),
+        _Agreement(loan: l, config: config),
         if (installments.isNotEmpty) ...[
           _Schedule(loan: l, installments: installments),
-          _Repayments(loanId: l.id, currency: l.currency),
+          _Repayments(loanId: l.id, currency: l.currency, borrower: borrower),
         ],
         if (LoanActions.canCancel(l, uid))
           Padding(
@@ -458,6 +641,7 @@ class _LoanBody extends StatelessWidget {
               label: "Withdraw my request".tr,
               icon: Icons.close_rounded,
               expand: true,
+              color: c.danger,
               onPressed: () async {
                 final ok = await finConfirm(
                   title: "Withdraw this loan request?".tr,
@@ -517,7 +701,7 @@ class _LoanHeader extends StatelessWidget {
     return FinHeader(
       overline: "Amount".tr,
       title: FinanceMoney.format(l.amount, l.currency),
-      subtitle: '${GroupLabels.purpose(l.purpose).tr} · ${l.durationMonths} ${"months".tr} · ${Frequency.label(l.frequency).tr}'
+      subtitle: '${GroupLabels.purpose(l.purpose).tr} · ${_monthsLabel(l.durationMonths)} · ${Frequency.label(l.frequency).tr}'
           '${l.groupName.isEmpty ? '' : '\n${"Group".tr}: ${l.groupName}'}',
       status: l.status,
       statusLabel: statusLabel,
@@ -609,6 +793,8 @@ class _Voting extends StatelessWidget {
         StreamBuilder<Map<String, dynamic>?>(
           stream: FinanceLendingService.myVote(l.id),
           builder: (context, snap) {
+            // Until the user's own vote is read, no button: they may already have voted.
+            if (snap.connectionState == ConnectionState.waiting && !snap.hasData) return const SizedBox.shrink();
             final mine = snap.data;
             if (mine != null) {
               return FinNotice((mine['approve'] == true ? "You voted to approve." : "You voted to decline.").tr);
@@ -636,8 +822,39 @@ class _Voting extends StatelessWidget {
 class _Funding extends StatelessWidget {
   final Loan loan;
   final List<String> methods;
+  final LendingConfig? config;
 
-  const _Funding({required this.loan, required this.methods});
+  const _Funding({required this.loan, required this.methods, required this.config});
+
+  /// Lending is a risk: the amount, the terms and that risk, confirmed
+  /// before the payment step.
+  Future<void> _lend(BuildContext context) async {
+    final l = loan;
+    final amount = await askAmount(context, title: "How much do you lend?".tr, currency: l.currency, max: l.fundingRemaining);
+    if (amount == null || !context.mounted) return;
+    final cfg = config;
+    final bool ok = await finConfirm(
+      title: "Lend to this member?".tr,
+      message: "Lending carries a risk: if the borrower does not repay, you can lose part or all of this money. Repayments are shared among the lenders in proportion to what each lent.".tr,
+      lines: [
+        if (cfg != null) ("Interest".tr, '${_pct(cfg.annualInterestPercent)} ${"a year".tr}'),
+        ("Duration".tr, _monthsLabel(l.durationMonths)),
+        ("Repayments".tr, Frequency.label(l.frequency).tr),
+        if (l.groupName.isNotEmpty) ("Group".tr, l.groupName),
+      ],
+      total: ("Amount".tr, FinanceMoney.format(amount, l.currency)),
+      confirmLabel: "Continue".tr,
+    );
+    if (!ok || !context.mounted) return;
+    await FinancePaySheet.show(
+      context,
+      title: "Lend".tr,
+      amount: amount,
+      currency: l.currency,
+      methods: methods,
+      submit: (p) => FinanceRequestKeys.send('loan.fund', l.id, amount, p, (key) => FinanceLendingService.fund(l.id, amount, p, key)),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -646,7 +863,10 @@ class _Funding extends StatelessWidget {
       stream: FinanceLendingService.myFundings(l.id),
       builder: (context, snap) {
         final mine = snap.data ?? const [];
-        final int lent = mine.where((f) => f['status'] == 'succeeded').fold(0, (s, f) => s + FinanceSummary.intOf(f['amount']));
+        int sum(bool Function(String) f) => mine.where((x) => f(x['status']?.toString() ?? '')).fold(0, (s, x) => s + FinanceSummary.intOf(x['amount']));
+        final int lent = sum((s) => s == 'succeeded');
+        // A funding counts once the provider confirms it; until then it is shown as such.
+        final int confirming = sum((s) => s == 'pending' || s == 'processing');
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -662,7 +882,8 @@ class _Funding extends StatelessWidget {
                   ),
                 ),
                 if (l.status == 'funding' && l.fundingRemaining > 0) FinRow("Left to fund".tr, FinanceMoney.format(l.fundingRemaining, l.currency)),
-                if (mine.isNotEmpty) FinRow("You lent".tr, FinanceMoney.format(lent, l.currency)),
+                if (lent > 0) FinRow("You lent".tr, FinanceMoney.format(lent, l.currency)),
+                if (confirming > 0) FinRow("Being confirmed".tr, FinanceMoney.format(confirming, l.currency)),
               ],
             ),
             if (LoanActions.canFund(l, FinanceService.uid))
@@ -673,14 +894,7 @@ class _Funding extends StatelessWidget {
                     label: "Lend to this member".tr,
                     icon: Icons.volunteer_activism_outlined,
                     expand: true,
-                    onPressed: !verified
-                        ? null
-                        : () async {
-                            final amount = await askAmount(context, title: "How much do you lend?".tr, currency: l.currency, max: l.fundingRemaining);
-                            if (amount == null || !context.mounted) return;
-                            final key = FinanceGroupService.newRequestKey();
-                            await FinancePaySheet.show(context, title: "Lend".tr, amount: amount, currency: l.currency, methods: methods, submit: (p) => FinanceLendingService.fund(l.id, amount, p, key));
-                          },
+                    onPressed: !verified ? null : () => _lend(context),
                   ),
                 ),
               ),
@@ -691,11 +905,13 @@ class _Funding extends StatelessWidget {
   }
 }
 
-/// The loan agreement issued by the server, and its acceptance by the borrower.
+/// The loan agreement issued by the server, the repayments it commits the
+/// borrower to, and its acceptance.
 class _Agreement extends StatefulWidget {
   final Loan loan;
+  final LendingConfig? config;
 
-  const _Agreement({required this.loan});
+  const _Agreement({required this.loan, required this.config});
 
   @override
   State<_Agreement> createState() => _AgreementState();
@@ -703,6 +919,37 @@ class _Agreement extends StatefulWidget {
 
 class _AgreementState extends State<_Agreement> {
   bool _accepted = false;
+  bool _showSchedule = false;
+
+  /// (number, due date, amount) of each installment: the agreement's own
+  /// list when it has one (binding), else estimated from its terms with the
+  /// same rules as the request screen. Second: whether it is an estimate.
+  (List<(int, DateTime?, int)>, bool) _installments(Map<String, dynamic> a) {
+    final l = widget.loan;
+    final list = a['installments'] is List ? (a['installments'] as List).whereType<Map>().map((m) => Map<String, dynamic>.from(m)).toList() : const <Map<String, dynamic>>[];
+    if (list.isNotEmpty) {
+      return (
+        [
+          for (final (i, m) in list.indexed)
+            (m['number'] is num ? (m['number'] as num).toInt() : i + 1, FinanceGroupService.toDate(m['dueDate']), FinanceSummary.intOf(m['amount'] ?? m['amountDue'])),
+        ],
+        false,
+      );
+    }
+    final String? method = (a['interestMethod'] ?? widget.config?.interestMethod)?.toString();
+    final num? rate = a['annualInterestPercent'] is num ? a['annualInterestPercent'] as num : widget.config?.annualInterestPercent;
+    final int principal = FinanceSummary.intOf(a['principal']);
+    if (rate == null || principal <= 0 || l.durationMonths <= 0 || (method != 'flat' && method != 'declining')) return (const [], true);
+    final e = LoanCalculator.estimate(
+      principal: principal,
+      months: l.durationMonths,
+      frequency: l.frequency,
+      method: method!,
+      annualPercent: rate.toDouble(),
+      firstDue: Frequency.next(DateTime.now(), l.frequency),
+    );
+    return ([for (final i in e.installments) (i.number, i.dueDate, i.total)], true);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -716,6 +963,8 @@ class _AgreementState extends State<_Agreement> {
         final cur = a['currency']?.toString() ?? l.currency;
         final int version = FinanceSummary.intOf(a['version']);
         final bool canAccept = LoanActions.canAcceptAgreement(l, FinanceService.uid) && a['acceptedAt'] == null;
+        final (installments, estimated) = _installments(a);
+        final String? estimate = estimated ? "Estimated".tr : null;
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -735,6 +984,26 @@ class _AgreementState extends State<_Agreement> {
                   ),
               ],
             ),
+            // The repayments the borrower accepts with the agreement.
+            if (installments.isNotEmpty)
+              FinSection(
+                title: "Repayment schedule".tr,
+                divided: true,
+                footnote: estimated ? "Estimated from the agreement's terms. The binding dates are set when the loan is paid out.".tr : null,
+                children: [
+                  FinRow("Each installment".tr, FinanceMoney.format(installments.first.$3, cur), sub: estimate),
+                  FinRow("Number of installments".tr, '${installments.length}'),
+                  FinRow("Repayments".tr, Frequency.label(l.frequency).tr),
+                  if (installments.first.$2 != null) FinRow("First installment".tr, _date(installments.first.$2), sub: estimate),
+                  _Toggle(
+                    label: (_showSchedule ? "Hide the schedule" : "See the schedule").tr,
+                    expanded: _showSchedule,
+                    onTap: () => setState(() => _showSchedule = !_showSchedule),
+                  ),
+                  if (_showSchedule)
+                    for (final (n, due, amount) in installments) FinRow('$n. ${_date(due)}', FinanceMoney.format(amount, cur)),
+                ],
+              ),
             if (a['acceptedAt'] != null) FinNotice('${"Accepted on".tr} ${FinanceUi.date(a['acceptedAt'])}', tone: DsTone.success),
             if (canAccept) ...[
               const DsGap(DsSpace.sm),
@@ -792,10 +1061,12 @@ class _InstallmentRow extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: DsSpace.md),
         child: Row(
           children: [
-            SizedBox(
-              width: 28,
+            // At least 28 wide so the dates align; wider for "100" or large text.
+            ConstrainedBox(
+              constraints: const BoxConstraints(minWidth: 28),
               child: Text('${i['number'] ?? ''}', style: DsTypography.labelSm.copyWith(color: c.textSecondary).tabular),
             ),
+            const DsGap(DsSpace.xs),
             Expanded(child: Text(_date(FinanceGroupService.toDate(i['dueDate'])), style: DsTypography.body.copyWith(color: c.textPrimary))),
             const DsGap(DsSpace.sm),
             Column(
@@ -835,23 +1106,81 @@ class _RepayButton extends StatelessWidget {
         onPressed: !verified
             ? null
             : () async {
-                final int suggested = next == null ? 0 : FinanceSummary.intOf(next['amountDue'] ?? next['amount']);
-                final amount = await askAmount(context, title: "Repay".tr, currency: l.currency, max: l.outstandingAmount, hint: suggested > 0 ? FinanceMoney.format(suggested, l.currency) : null);
+                final amount = await finSheet<int>(title: "Repay".tr, child: _RepaySheet(loan: l, next: next));
                 if (amount == null || !context.mounted) return;
-                final key = FinanceGroupService.newRequestKey();
-                await FinancePaySheet.show(context, title: "Repay".tr, amount: amount, currency: l.currency, methods: methods, submit: (p) => FinanceLendingService.repay(l.id, amount, p, key));
+                await FinancePaySheet.show(
+                  context,
+                  title: "Repay".tr,
+                  amount: amount,
+                  currency: l.currency,
+                  methods: methods,
+                  submit: (p) => FinanceRequestKeys.send('loan.repay', l.id, amount, p, (key) => FinanceLendingService.repay(l.id, amount, p, key)),
+                );
               },
       ),
     );
   }
 }
 
-/// The repayments recorded by the server, newest first.
+/// How much to repay: prefilled with the installment due, with what it is
+/// made of and what remains; any amount up to the outstanding balance.
+class _RepaySheet extends StatefulWidget {
+  final Loan loan;
+  final Map<String, dynamic>? next;
+
+  const _RepaySheet({required this.loan, required this.next});
+
+  @override
+  State<_RepaySheet> createState() => _RepaySheetState();
+}
+
+class _RepaySheetState extends State<_RepaySheet> {
+  late final int _due = widget.next == null ? 0 : FinanceSummary.intOf(widget.next!['amountDue'] ?? widget.next!['amount']);
+  late final _ctrl = TextEditingController(
+    text: _due > 0 ? FinanceAmount.input(_due > widget.loan.outstandingAmount ? widget.loan.outstandingAmount : _due, widget.loan.currency) : '',
+  );
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l = widget.loan;
+    final next = widget.next;
+    final String cur = l.currency;
+    final int? value = FinanceAmount.parse(_ctrl.text, cur);
+    final bool ok = value != null && value <= l.outstandingAmount;
+    final int penalty = next == null ? 0 : FinanceSummary.intOf(next['penalty']);
+    final DateTime? dueDate = next == null ? null : FinanceGroupService.toDate(next['dueDate']);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (_due > 0) FinRow("Next installment".tr, FinanceMoney.format(_due, cur), sub: dueDate == null ? null : '${"Due date".tr}: ${_date(dueDate)}'),
+        if (penalty > 0) FinRow("Late payment penalty".tr, FinanceMoney.format(penalty, cur)),
+        FinRow("Still to repay".tr, FinanceMoney.format(l.outstandingAmount, cur), strong: true),
+        const DsGap(DsSpace.lg),
+        FinAmountField(label: "Amount".tr, controller: _ctrl, currency: cur, max: l.outstandingAmount, onChanged: (_) => setState(() {})),
+        DsButton.primary(label: "Continue".tr, expand: true, onPressed: ok ? () => Get.back(result: value) : null),
+      ],
+    );
+  }
+}
+
+/// The repayments recorded by the server, newest first, worded from the
+/// borrower's side (money paid out of their account).
 class _Repayments extends StatelessWidget {
   final String loanId;
   final String currency;
+  final bool borrower;
 
-  const _Repayments({required this.loanId, required this.currency});
+  const _Repayments({required this.loanId, required this.currency, required this.borrower});
+
+  static String _label(String? s) =>
+      const {'succeeded': 'Paid', 'pending': 'Awaiting payment', 'processing': 'Processing', 'failed': 'Failed'}[s] ?? GroupLabels.contribution(s);
 
   @override
   Widget build(BuildContext context) {
@@ -869,9 +1198,10 @@ class _Repayments extends StatelessWidget {
                 icon: Icons.north_east_rounded,
                 title: FinanceUi.date(r['createdAt']),
                 subtitle: (r['reference'] ?? '').toString().isEmpty ? null : ltrRef(r['reference']),
-                amount: FinanceMoney.format(FinanceSummary.intOf(r['amount']), currency),
+                amount: borrower ? FinanceMoney.signed(-FinanceSummary.intOf(r['amount']), currency) : FinanceMoney.format(FinanceSummary.intOf(r['amount']), currency),
+                amountColor: r['status'] == 'failed' ? DsColors.of(context).textMuted : null,
                 status: r['status']?.toString(),
-                statusLabel: GroupLabels.contribution(r['status']?.toString()).tr,
+                statusLabel: _label(r['status']?.toString()).tr,
               ),
           ],
         );

@@ -112,11 +112,12 @@ class FinStatusChip extends StatelessWidget {
   final String label;
   final bool icon;
 
-  const FinStatusChip({super.key, required this.status, required this.label, this.icon = false});
+  /// On by default: the icon, with the text, keeps colour from being the
+  /// only cue.
+  const FinStatusChip({super.key, required this.status, required this.label, this.icon = true});
 
   @override
-  Widget build(BuildContext context) =>
-      DsBadge(label: label, tone: FinStatus.tone(status), small: true, icon: icon ? FinStatus.icon(status) : null);
+  Widget build(BuildContext context) => DsBadge(label: label, tone: FinStatus.tone(status), small: true, icon: icon ? FinStatus.icon(status) : null);
 }
 
 // --------------------------------------------------------------- scaffold
@@ -187,56 +188,106 @@ class FinHero extends StatelessWidget {
   Widget build(BuildContext context) {
     const onHero = Colors.white;
     final muted = Colors.white.withValues(alpha: 0.72);
-    return Semantics(
-      container: true,
-      label: '$label: $amount${caption == null ? '' : '. $caption'}',
-      child: Container(
-        decoration: BoxDecoration(color: FinColors.hero(context), borderRadius: const BorderRadius.all(Radius.circular(16))),
-        padding: const EdgeInsets.fromLTRB(DsSpace.xl, DsSpace.xl, DsSpace.xl, DsSpace.lg),
-        child: ExcludeSemantics(
-          excluding: false,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(children: [
-                Expanded(child: Text(label, style: DsTypography.labelSm.copyWith(color: muted))),
-                ?trailing,
-              ]),
-              const DsGap(DsSpace.xs),
-              FittedBox(
-                fit: BoxFit.scaleDown,
-                alignment: AlignmentDirectional.centerStart,
-                child: Text(amount, style: FinText.heroAmount(onHero)),
-              ),
-              if (caption != null) ...[
-                const DsGap(DsSpace.xxs),
-                Text(caption!, style: DsTypography.bodySm.copyWith(color: muted)),
-              ],
-              if (stats.isNotEmpty) ...[
-                const DsGap(DsSpace.lg),
-                Container(height: 1, color: Colors.white.withValues(alpha: 0.12)),
-                const DsGap(DsSpace.md),
-                Row(children: [
-                  for (final (i, s) in stats.indexed) ...[
-                    if (i > 0) Container(width: 1, height: 32, color: Colors.white.withValues(alpha: 0.12), margin: const EdgeInsets.symmetric(horizontal: DsSpace.md)),
-                    Expanded(
-                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        Text(s.label, style: DsTypography.caption.copyWith(color: muted), maxLines: 1, overflow: TextOverflow.ellipsis),
-                        const DsGap(DsSpace.xxs),
-                        FittedBox(
-                          fit: BoxFit.scaleDown,
-                          alignment: AlignmentDirectional.centerStart,
-                          child: Text(s.value, style: DsTypography.bodyStrong.copyWith(color: s.color ?? onHero).tabular),
-                        ),
-                      ]),
+    final Color line = Colors.white.withValues(alpha: 0.12);
+    // Read once by a screen reader: the label, the amount, the caption and
+    // the figures; the actions below stay separate buttons.
+    final String spoken = ['$label: $amount', ?caption, for (final s in stats) '${s.label}: ${s.value}'].join('. ');
+    Widget statValue(FinHeroStat s) => Text(s.value, style: DsTypography.bodyStrong.copyWith(color: s.color ?? onHero).tabular);
+    return Container(
+      decoration: BoxDecoration(color: FinColors.hero(context), borderRadius: const BorderRadius.all(Radius.circular(16))),
+      padding: const EdgeInsets.fromLTRB(DsSpace.xl, DsSpace.xl, DsSpace.xl, DsSpace.lg),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Semantics(
+            container: true,
+            label: spoken,
+            child: ExcludeSemantics(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(label, style: DsTypography.labelSm.copyWith(color: muted)),
+                      ),
+                      ?trailing,
+                    ],
+                  ),
+                  const DsGap(DsSpace.xs),
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: AlignmentDirectional.centerStart,
+                    child: Text(amount, style: FinText.heroAmount(onHero)),
+                  ),
+                  if (caption != null) ...[const DsGap(DsSpace.xxs), Text(caption!, style: DsTypography.bodySm.copyWith(color: muted))],
+                  if (stats.isNotEmpty) ...[
+                    const DsGap(DsSpace.lg),
+                    Container(height: 1, color: line),
+                    const DsGap(DsSpace.md),
+                    LayoutBuilder(
+                      builder: (context, box) {
+                        // Side by side while each figure keeps ~110dp (scaled
+                        // with the text); else one figure per line.
+                        final bool rows = box.maxWidth / stats.length < 110 * MediaQuery.textScalerOf(context).scale(1);
+                        if (rows) {
+                          return Column(
+                            children: [
+                              for (final (i, s) in stats.indexed)
+                                Padding(
+                                  padding: EdgeInsets.only(top: i == 0 ? 0 : DsSpace.xs),
+                                  child: Row(
+                                    children: [
+                                      Expanded(
+                                        child: Text(s.label, style: DsTypography.caption.copyWith(color: muted)),
+                                      ),
+                                      const DsGap(DsSpace.sm),
+                                      Flexible(
+                                        child: FittedBox(fit: BoxFit.scaleDown, alignment: AlignmentDirectional.centerEnd, child: statValue(s)),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                            ],
+                          );
+                        }
+                        return Row(
+                          children: [
+                            for (final (i, s) in stats.indexed) ...[
+                              if (i > 0)
+                                Container(
+                                  width: 1,
+                                  height: 32,
+                                  color: line,
+                                  margin: const EdgeInsets.symmetric(horizontal: DsSpace.md),
+                                ),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      s.label,
+                                      style: DsTypography.caption.copyWith(color: muted),
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    const DsGap(DsSpace.xxs),
+                                    FittedBox(fit: BoxFit.scaleDown, alignment: AlignmentDirectional.centerStart, child: statValue(s)),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ],
+                        );
+                      },
                     ),
                   ],
-                ]),
-              ],
-              if (footer != null) ...[const DsGap(DsSpace.lg), footer!],
-            ],
+                ],
+              ),
+            ),
           ),
-        ),
+          if (footer != null) ...[const DsGap(DsSpace.lg), footer!],
+        ],
       ),
     );
   }
@@ -341,6 +392,10 @@ class FinSection extends StatelessWidget {
   /// Space above the section (0 for the first one).
   final double top;
 
+  /// False for children that are surfaces of their own (FinMetrics, a
+  /// chart card): they are not put on a second one.
+  final bool surface;
+
   const FinSection({
     super.key,
     this.title,
@@ -351,6 +406,7 @@ class FinSection extends StatelessWidget {
     this.padding,
     this.footnote,
     this.top = FinSpace.section,
+    this.surface = true,
   });
 
   @override
@@ -365,31 +421,45 @@ class FinSection extends StatelessWidget {
           if (title != null || actionLabel != null)
             Padding(
               padding: const EdgeInsets.only(bottom: DsSpace.sm, left: DsSpace.xxs, right: DsSpace.xxs),
-              child: Row(children: [
-                Expanded(child: Semantics(header: true, child: Text((title ?? '').toUpperCase(), style: FinText.sectionTitle(context)))),
-                if (actionLabel != null)
-                  InkWell(
-                    onTap: onAction,
-                    borderRadius: DsRadius.brSm,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: DsSpace.xs, vertical: DsSpace.xxs),
-                      child: Text(actionLabel!, style: DsTypography.labelSm.copyWith(color: FinColors.brand(context))),
-                    ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Semantics(header: true, child: Text((title ?? '').toUpperCase(), style: FinText.sectionTitle(context))),
                   ),
-              ]),
-            ),
-          FinSurface(
-            padding: padding ?? const EdgeInsets.symmetric(horizontal: DsSpace.lg, vertical: DsSpace.sm),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                for (final (i, w) in items.indexed) ...[
-                  if (divided && i > 0) Divider(height: 1, thickness: 1, color: c.divider),
-                  w,
+                  if (actionLabel != null)
+                    Semantics(
+                      button: true,
+                      child: InkWell(
+                        onTap: onAction,
+                        borderRadius: DsRadius.brSm,
+                        // A comfortable target (48dp) for "See all" and the like.
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(minHeight: 48, minWidth: 48),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: DsSpace.xs),
+                            child: Center(
+                              widthFactor: 1,
+                              child: Text(actionLabel!, style: DsTypography.labelSm.copyWith(color: FinColors.brand(context))),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
                 ],
-              ],
+              ),
             ),
-          ),
+          if (surface)
+            FinSurface(
+              padding: padding ?? const EdgeInsets.symmetric(horizontal: DsSpace.lg, vertical: DsSpace.sm),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (final (i, w) in items.indexed) ...[if (divided && i > 0) Divider(height: 1, thickness: 1, color: c.divider), w],
+                ],
+              ),
+            )
+          else
+            ...items,
           if (footnote != null)
             Padding(
               padding: const EdgeInsets.only(top: DsSpace.sm, left: DsSpace.xxs, right: DsSpace.xxs),
@@ -477,48 +547,86 @@ class FinListTile extends StatelessWidget {
     this.chevron = false,
   });
 
+  /// Narrower than this (scaled with the text size), the amount and status
+  /// go under the title instead of beside it: a small phone or large text
+  /// would otherwise squeeze the title or overflow the row.
+  static const double _sideBySideWidth = 300;
+
   @override
   Widget build(BuildContext context) {
     final c = DsColors.of(context);
+    final bool hasStatus = statusLabel != null && status != null;
+    final bool hasFigures = amount != null || hasStatus;
+    Widget figures(CrossAxisAlignment align) => Column(
+      crossAxisAlignment: align,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (amount != null)
+          Text(
+            amount!,
+            style: DsTypography.bodyStrong.copyWith(color: amountColor ?? c.textPrimary).tabular,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+        if (hasStatus) ...[if (amount != null) const DsGap(DsSpace.xxs), FinStatusChip(status: status!, label: statusLabel!)],
+      ],
+    );
     return MergeSemantics(
       child: InkWell(
         onTap: onTap,
         borderRadius: DsRadius.brSm,
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: DsSpace.md),
-          child: Row(
-            children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(color: c.tone(iconTone).soft, borderRadius: DsRadius.brSm),
-                child: Icon(icon, size: 20, color: iconTone == DsTone.neutral ? c.textSecondary : c.tone(iconTone).strong),
-              ),
-              const DsGap(DsSpace.md),
-              Expanded(
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(title, style: DsTypography.bodyStrong.copyWith(color: c.textPrimary), maxLines: 2, overflow: TextOverflow.ellipsis),
-                  if (subtitle != null && subtitle!.isNotEmpty) ...[
-                    const DsGap(DsSpace.xxs),
-                    // Three lines: a row's subtitle often ends with the
-                    // detail that matters (a date, what is left to repay).
-                    Text(subtitle!, style: DsTypography.caption.copyWith(color: c.textSecondary), maxLines: 3, overflow: TextOverflow.ellipsis),
+          child: LayoutBuilder(
+            builder: (context, box) {
+              final bool stacked = hasFigures && box.maxWidth < _sideBySideWidth * MediaQuery.textScalerOf(context).scale(1);
+              return Row(
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(color: c.tone(iconTone).soft, borderRadius: DsRadius.brSm),
+                    child: Icon(icon, size: 20, color: iconTone == DsTone.neutral ? c.textSecondary : c.tone(iconTone).strong),
+                  ),
+                  const DsGap(DsSpace.md),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          style: DsTypography.bodyStrong.copyWith(color: c.textPrimary),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        if (subtitle != null && subtitle!.isNotEmpty) ...[
+                          const DsGap(DsSpace.xxs),
+                          // Three lines: a row's subtitle often ends with the
+                          // detail that matters (a date, what is left to repay).
+                          Text(
+                            subtitle!,
+                            style: DsTypography.caption.copyWith(color: c.textSecondary),
+                            maxLines: 3,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                        if (stacked) ...[const DsGap(DsSpace.xs), figures(CrossAxisAlignment.start)],
+                      ],
+                    ),
+                  ),
+                  if (hasFigures && !stacked) ...[
+                    const DsGap(DsSpace.sm),
+                    ConstrainedBox(
+                      constraints: BoxConstraints(maxWidth: box.maxWidth * 0.45),
+                      child: figures(CrossAxisAlignment.end),
+                    ),
                   ],
-                ]),
-              ),
-              if (amount != null || statusLabel != null) ...[
-                const DsGap(DsSpace.sm),
-                Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                  if (amount != null) Text(amount!, style: DsTypography.bodyStrong.copyWith(color: amountColor ?? c.textPrimary).tabular),
-                  if (statusLabel != null && status != null) ...[
-                    if (amount != null) const DsGap(DsSpace.xxs),
-                    FinStatusChip(status: status!, label: statusLabel!),
-                  ],
-                ]),
-              ],
-              if (trailing != null) ...[const DsGap(DsSpace.sm), trailing!],
-              if (chevron) ...[const DsGap(DsSpace.xs), Icon(Directionality.of(context) == TextDirection.rtl ? Icons.chevron_left_rounded : Icons.chevron_right_rounded, color: c.textMuted)],
-            ],
+                  if (trailing != null) ...[const DsGap(DsSpace.sm), trailing!],
+                  // chevron_right mirrors itself in right-to-left text.
+                  if (chevron) ...[const DsGap(DsSpace.xs), Icon(Icons.chevron_right_rounded, color: c.textMuted)],
+                ],
+              );
+            },
           ),
         ),
       ),
@@ -551,14 +659,14 @@ class FinMetrics extends StatelessWidget {
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: DsSpace.md),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(m.label, style: DsTypography.caption.copyWith(color: c.textSecondary), maxLines: 2),
+              Text(m.label, style: DsTypography.caption.copyWith(color: c.textSecondary), maxLines: 2, overflow: TextOverflow.ellipsis),
               const DsGap(DsSpace.xxs),
               FittedBox(
                 fit: BoxFit.scaleDown,
                 alignment: AlignmentDirectional.centerStart,
                 child: Text(m.value, style: DsTypography.titleSm.copyWith(color: m.color ?? c.textPrimary).tabular),
               ),
-              if (m.sub != null) Text(m.sub!, style: DsTypography.caption.copyWith(color: c.textSecondary)),
+              if (m.sub != null) Text(m.sub!, style: DsTypography.caption.copyWith(color: c.textSecondary), maxLines: 2, overflow: TextOverflow.ellipsis),
             ]),
           ),
         );
@@ -696,8 +804,13 @@ class FinActions extends StatelessWidget {
     final bg = onHero ? Colors.white.withValues(alpha: 0.12) : FinColors.soft(context);
     final text = onHero ? Colors.white : c.textPrimary;
     return LayoutBuilder(builder: (context, box) {
-      const int perRow = 4;
-      final double w = (box.maxWidth - DsSpace.sm * (perRow - 1)) / perRow;
+      // Four per row while each keeps 72 dp (scaled with the text), else
+      // three, else two; four actions go two by two rather than 3 + 1.
+      final double min = 72 * MediaQuery.textScalerOf(context).scale(1);
+      double width(int n) => (box.maxWidth - DsSpace.sm * (n - 1)) / n;
+      int perRow = [4, 3].firstWhere((n) => width(n) >= min, orElse: () => 2);
+      if (perRow == 3 && actions.length == 4) perRow = 2;
+      final double w = width(perRow);
       return Wrap(
         spacing: DsSpace.sm,
         runSpacing: DsSpace.md,
@@ -759,17 +872,66 @@ class FinNotice extends StatelessWidget {
       );
 }
 
+// ----------------------------------------------------------------- reload
+
+/// Builds [builder] again from scratch when it calls retry: the streams it
+/// creates subscribe anew (a failed Firestore stream does not recover).
+class FinReload extends StatefulWidget {
+  final Widget Function(BuildContext context, VoidCallback retry) builder;
+
+  const FinReload({super.key, required this.builder});
+
+  @override
+  State<FinReload> createState() => _FinReloadState();
+}
+
+class _FinReloadState extends State<FinReload> {
+  int _attempt = 0;
+
+  @override
+  Widget build(BuildContext context) => KeyedSubtree(key: ValueKey(_attempt), child: widget.builder(context, () => setState(() => _attempt++)));
+}
+
+// ---------------------------------------------------------------- pickers
+
+/// The date pickers in the finance navy wherever they are opened from: a
+/// screen's own context sits above its FinScaffold's accent.
+Widget _finAccent(BuildContext context, Widget? child) =>
+    DsAccentScope(color: Theme.of(context).brightness == Brightness.dark ? FinColors.navyDark : FinColors.navy, child: child!);
+
+Future<DateTime?> finPickDate(BuildContext context, {required DateTime initial, required DateTime first, required DateTime last}) =>
+    showDatePicker(context: context, initialDate: initial, firstDate: first, lastDate: last, builder: _finAccent);
+
+Future<DateTimeRange?> finPickDateRange(BuildContext context, {DateTimeRange? initial, required DateTime first, required DateTime last}) =>
+    showDateRangePicker(context: context, firstDate: first, lastDate: last, initialDateRange: initial, builder: _finAccent);
+
 /// Loading / error / empty for a section, same footprint so layouts stay still.
 abstract final class FinState {
-  static Widget loading({int rows = 3}) => Padding(padding: const EdgeInsets.only(top: FinSpace.section), child: DsSkeletonList(itemCount: rows));
+  static Widget loading({int rows = 3}) => Padding(
+    padding: const EdgeInsets.only(top: FinSpace.section),
+    child: DsSkeletonList(itemCount: rows),
+  );
 
-  static Widget error(String message, {VoidCallback? onRetry}) =>
-      Padding(padding: const EdgeInsets.only(top: FinSpace.section), child: DsErrorState(message: message, compact: true, onRetry: onRetry));
+  /// One record read live (a stream of a document): a skeleton until the
+  /// first answer, an error with [onRetry], or [gone] when the record does
+  /// not exist (deleted, never created) - never a skeleton for ever. Null
+  /// when there is data to show.
+  static Widget? of<T>(AsyncSnapshot<T?> snap, {String gone = "This is no longer available.", VoidCallback? onRetry}) {
+    if (snap.hasError) return error("Could not load this. Check your connection and try again.".tr, onRetry: onRetry);
+    if (snap.connectionState == ConnectionState.waiting && !snap.hasData) return loading();
+    if (snap.data == null) return empty(Icons.search_off_rounded, gone.tr);
+    return null;
+  }
+
+  static Widget error(String message, {VoidCallback? onRetry}) => Padding(
+    padding: const EdgeInsets.only(top: FinSpace.section),
+    child: DsErrorState(message: message, compact: true, onRetry: onRetry),
+  );
 
   static Widget empty(IconData icon, String title, {String? message, String? actionLabel, VoidCallback? onAction}) => Padding(
-        padding: const EdgeInsets.only(top: FinSpace.section),
-        child: DsEmptyState(icon: icon, title: title, message: message, actionLabel: actionLabel, onAction: onAction, compact: true),
-      );
+    padding: const EdgeInsets.only(top: FinSpace.section),
+    child: DsEmptyState(icon: icon, title: title, message: message, actionLabel: actionLabel, onAction: onAction, compact: true),
+  );
 }
 
 /// A bottom sheet in the finance identity. Sheets open in the app's overlay,
@@ -797,6 +959,89 @@ Future<T?> finSheet<T>({
     enableDrag: enableDrag,
     barrierColor: DsColors.resolve(dark).scrim,
   );
+}
+
+// ------------------------------------------------------------- loaders
+
+/// The state of a configuration loaded by [FinConfig].
+class FinConfigState<T> {
+  final T? config;
+  final bool loading;
+  final bool failed;
+  final VoidCallback retry;
+
+  const FinConfigState._({required this.config, required this.loading, required this.failed, required this.retry});
+
+  bool get ready => !loading && !failed && config != null;
+
+  /// What a screen shows instead of its content until [ready]: a skeleton,
+  /// an error with Retry (offline, refused), or [unavailable] when the
+  /// admin has not turned the service on. Null when ready.
+  Widget? placeholder(IconData icon, String unavailable) {
+    if (loading) return FinState.loading();
+    if (failed) return FinState.error("Could not load this service. Check your connection and try again.".tr, onRetry: retry);
+    if (config == null) return FinState.empty(icon, unavailable);
+    return null;
+  }
+}
+
+/// Loads a service's configuration once (`platform_settings/*`) and builds
+/// with its state; Retry loads it again. A failed read is never shown as
+/// "not available".
+class FinConfig<T> extends StatefulWidget {
+  final Future<T?> Function() load;
+  final Widget Function(BuildContext context, FinConfigState<T> state) builder;
+
+  const FinConfig({super.key, required this.load, required this.builder});
+
+  @override
+  State<FinConfig<T>> createState() => _FinConfigState<T>();
+}
+
+class _FinConfigState<T> extends State<FinConfig<T>> {
+  late Future<T?> _future = widget.load();
+
+  void _retry() => setState(() => _future = widget.load());
+
+  @override
+  Widget build(BuildContext context) => FutureBuilder<T?>(
+    future: _future,
+    builder: (context, snap) => widget.builder(
+      context,
+      FinConfigState<T>._(config: snap.data, loading: snap.connectionState == ConnectionState.waiting, failed: snap.hasError, retry: _retry),
+    ),
+  );
+}
+
+/// Why the action below is not available yet - "To continue: amount,
+/// signature" - so a disabled button is never a dead end. [items] are
+/// already translated; nothing is shown when empty.
+class FinMissing extends StatelessWidget {
+  final List<String> items;
+
+  const FinMissing(this.items, {super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    if (items.isEmpty) return const SizedBox.shrink();
+    final c = DsColors.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: DsSpace.sm),
+      child: Semantics(
+        liveRegion: true,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(Icons.info_outline_rounded, size: 16, color: c.textSecondary),
+            const DsGap(DsSpace.xs),
+            Expanded(
+              child: Text('${"To continue".tr}: ${items.join(', ')}', style: DsTypography.caption.copyWith(color: c.textSecondary)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 /// A confirmation sheet: what will happen, the figures, then one action.
@@ -866,125 +1111,202 @@ class FinBarChart extends StatefulWidget {
 }
 
 class _FinBarChartState extends State<FinBarChart> {
-  late int _selected = widget.labels.length - 1;
+  /// The tapped period (index into the full series); null = the latest.
+  int? _selected;
 
   @override
   Widget build(BuildContext context) {
     final c = DsColors.of(context);
-    final double maxV = [...widget.a, ...widget.b, 1.0].reduce(math.max);
-    final int n = widget.labels.length;
-    final int sel = _selected.clamp(0, n - 1);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Row(children: [
-          Expanded(child: Text(widget.labels[sel], style: DsTypography.labelSm.copyWith(color: c.textSecondary))),
-          _legendValue(context, widget.aColor, widget.aLabel, widget.format(widget.a[sel])),
-          const DsGap(DsSpace.lg),
-          _legendValue(context, widget.bColor, widget.bLabel, widget.format(widget.b[sel])),
-        ]),
-        const DsGap(DsSpace.md),
-        SizedBox(
-          height: widget.height,
-          child: Stack(children: [
-            // Gridlines at 0, 50 and 100 %.
-            for (final f in const [0.0, 0.5, 1.0])
-              Positioned(left: 0, right: 0, bottom: f * (widget.height - 20) + 20, child: Container(height: 1, color: c.divider)),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                for (int i = 0; i < n; i++)
-                  Expanded(
-                    child: Semantics(
-                      button: true,
-                      label: '${widget.labels[i]}: ${widget.aLabel} ${widget.format(widget.a[i])}, ${widget.bLabel} ${widget.format(widget.b[i])}',
-                      child: GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onTap: () => setState(() => _selected = i),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.end,
-                          children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              crossAxisAlignment: CrossAxisAlignment.end,
-                              children: [
-                                _bar(widget.a[i] / maxV, widget.aColor, i == sel),
-                                const SizedBox(width: 3),
-                                _bar(widget.b[i] / maxV, widget.bColor, i == sel),
-                              ],
-                            ),
-                            const DsGap(DsSpace.xs),
-                            SizedBox(
-                              height: 16,
-                              child: Text(widget.labels[i].split(' ').first,
-                                  style: DsTypography.caption.copyWith(color: i == sel ? c.textPrimary : c.textSecondary, fontWeight: i == sel ? FontWeight.w700 : FontWeight.w500)),
-                            ),
-                          ],
-                        ),
+    final int total = math.min(widget.labels.length, math.min(widget.a.length, widget.b.length));
+    if (total == 0) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: DsSpace.lg),
+        child: Text("No figures for this period yet.".tr, style: DsTypography.caption.copyWith(color: c.textSecondary)),
+      );
+    }
+    final double maxV = [...widget.a.take(total), ...widget.b.take(total), 1.0].reduce(math.max);
+    final double labelHeight = MediaQuery.textScalerOf(context).scale(16) + 4;
+    return LayoutBuilder(
+      builder: (context, box) {
+        // As many recent periods as fit (>= 40dp each): 12 months on a tablet,
+        // the last 6 or 7 on a small phone. The latest is always shown.
+        final int fit = math.max(3, (box.maxWidth / 40).floor());
+        final int start = math.max(0, total - fit);
+        final int sel = (_selected ?? total - 1).clamp(start, total - 1);
+        return Semantics(
+          container: true,
+          label: '${widget.aLabel} / ${widget.bLabel}',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(widget.labels[sel], style: DsTypography.labelSm.copyWith(color: c.textSecondary)),
+              const DsGap(DsSpace.xs),
+              Wrap(
+                spacing: DsSpace.lg,
+                runSpacing: DsSpace.xs,
+                children: [
+                  _legendValue(context, widget.aColor, widget.aLabel, widget.format(widget.a[sel])),
+                  _legendValue(context, widget.bColor, widget.bLabel, widget.format(widget.b[sel])),
+                ],
+              ),
+              const DsGap(DsSpace.md),
+              SizedBox(
+                height: widget.height + labelHeight,
+                child: Stack(
+                  children: [
+                    // Gridlines at 0, 50 and 100 %.
+                    for (final f in const [0.0, 0.5, 1.0])
+                      Positioned(
+                        left: 0,
+                        right: 0,
+                        bottom: f * (widget.height - 4) + labelHeight,
+                        child: Container(height: 1, color: c.divider),
                       ),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        for (int i = start; i < total; i++)
+                          Expanded(
+                            child: Semantics(
+                              button: true,
+                              selected: i == sel,
+                              label: '${widget.labels[i]}: ${widget.aLabel} ${widget.format(widget.a[i])}, ${widget.bLabel} ${widget.format(widget.b[i])}',
+                              child: GestureDetector(
+                                behavior: HitTestBehavior.opaque,
+                                onTap: () => setState(() => _selected = i),
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.end,
+                                  children: [
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      crossAxisAlignment: CrossAxisAlignment.end,
+                                      children: [
+                                        _bar(widget.a[i] / maxV, widget.aColor, i == sel),
+                                        const SizedBox(width: 3),
+                                        _bar(widget.b[i] / maxV, widget.bColor, i == sel),
+                                      ],
+                                    ),
+                                    SizedBox(
+                                      height: labelHeight,
+                                      child: Align(
+                                        alignment: Alignment.bottomCenter,
+                                        child: Text(
+                                          widget.labels[i].split(' ').first,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.clip,
+                                          softWrap: false,
+                                          style: DsTypography.caption.copyWith(
+                                            color: i == sel ? c.textPrimary : c.textSecondary,
+                                            fontWeight: i == sel ? FontWeight.w700 : FontWeight.w500,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
-                  ),
-              ],
-            ),
-          ]),
-        ),
-      ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
   Widget _bar(double f, Color color, bool selected) => AnimatedContainer(
-        duration: MediaQuery.disableAnimationsOf(context) ? Duration.zero : DsMotion.base,
-        width: 10,
-        height: math.max(2, f * (widget.height - 24)),
-        decoration: BoxDecoration(color: selected ? color : color.withValues(alpha: 0.45), borderRadius: const BorderRadius.vertical(top: Radius.circular(3))),
-      );
+    duration: MediaQuery.disableAnimationsOf(context) ? Duration.zero : DsMotion.base,
+    width: 10,
+    height: math.max(2, f * (widget.height - 4)),
+    decoration: BoxDecoration(
+      color: selected ? color : color.withValues(alpha: 0.45),
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(3)),
+    ),
+  );
 
-  Widget _legendValue(BuildContext context, Color color, String label, String value) => Row(mainAxisSize: MainAxisSize.min, children: [
-        Container(width: 8, height: 8, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
-        const DsGap(DsSpace.xs),
-        Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+  Widget _legendValue(BuildContext context, Color color, String label, String value) => Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Container(
+        width: 8,
+        height: 8,
+        decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+      ),
+      const DsGap(DsSpace.xs),
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
           Text(label, style: DsTypography.caption.copyWith(color: DsColors.of(context).textSecondary)),
           Text(value, style: DsTypography.labelSm.copyWith(color: DsColors.of(context).textPrimary).tabular),
-        ]),
-      ]);
+        ],
+      ),
+    ],
+  );
 }
 
 /// A stacked share bar with a legend: allocation, budget splits.
 class FinShareBar extends StatelessWidget {
   final List<(String, double, String)> parts;
 
-  const FinShareBar({super.key, required this.parts});
+  /// Adds each part's share of the total to its label; off when the label
+  /// already carries the share the server worked out.
+  final bool percent;
 
-  static List<Color> palette(BuildContext context) {
-    final c = DsColors.of(context);
-    return [FinColors.brand(context), c.info, c.success, c.warning, const Color(0xFF7C5CBF), c.textMuted];
-  }
+  const FinShareBar({super.key, required this.parts, this.percent = false});
+
+  /// Eight distinct hues, each readable on the page in light and in dark.
+  /// The legend names every part next to its colour and amount, so the
+  /// colours are never the only way to tell the parts apart.
+  static const List<Color> _light = [
+    FinColors.navy, Color(0xFF0F766E), Color(0xFFB45309), Color(0xFF7C3AED), Color(0xFF0369A1), Color(0xFFBE123C), Color(0xFF15803D), Color(0xFF64748B),
+  ];
+  static const List<Color> _dark = [
+    FinColors.navyDark, Color(0xFF2DD4BF), Color(0xFFFBBF24), Color(0xFFC4B5FD), Color(0xFF7DD3FC), Color(0xFFFDA4AF), Color(0xFF86EFAC), Color(0xFFCBD5E1),
+  ];
+
+  static List<Color> palette(BuildContext context) => DsColors.of(context).isDark ? _dark : _light;
 
   @override
   Widget build(BuildContext context) {
+    final c = DsColors.of(context);
     final colors = palette(context);
     final total = parts.fold<double>(0, (s, p) => s + p.$2);
+    String label(String name, double v) => !percent ? name : '$name · ${ltr('${total <= 0 ? 0 : (v / total * 100).round()} %')}';
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      ClipRRect(
-        borderRadius: DsRadius.brPill,
-        child: SizedBox(
-          height: 10,
-          child: Row(children: [
-            for (final (i, p) in parts.indexed)
-              if (p.$2 > 0) Expanded(flex: math.max(1, (p.$2 / (total == 0 ? 1 : total) * 1000).round()), child: Container(color: colors[i % colors.length])),
-          ]),
+      ExcludeSemantics(
+        child: ClipRRect(
+          borderRadius: DsRadius.brPill,
+          child: SizedBox(
+            height: 10,
+            child: Row(children: [
+              for (final (i, p) in parts.indexed)
+                if (p.$2 > 0) Expanded(flex: math.max(1, (p.$2 / (total == 0 ? 1 : total) * 1000).round()), child: Container(color: colors[i % colors.length])),
+            ]),
+          ),
         ),
       ),
       const DsGap(DsSpace.sm),
       for (final (i, p) in parts.indexed)
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: DsSpace.xs),
-          child: Row(children: [
-            Container(width: 8, height: 8, decoration: BoxDecoration(color: colors[i % colors.length], shape: BoxShape.circle)),
-            const DsGap(DsSpace.sm),
-            Expanded(child: Text(p.$1, style: DsTypography.body)),
-            Text(p.$3, style: DsTypography.bodyStrong.tabular),
-          ]),
+        MergeSemantics(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: DsSpace.xs),
+            child: Row(children: [
+              Container(width: 10, height: 10, decoration: BoxDecoration(color: colors[i % colors.length], shape: BoxShape.circle)),
+              const DsGap(DsSpace.sm),
+              Expanded(
+                child: Text(label(p.$1, p.$2), style: DsTypography.body.copyWith(color: c.textPrimary), maxLines: 2, overflow: TextOverflow.ellipsis),
+              ),
+              const DsGap(DsSpace.sm),
+              Flexible(
+                child: Text(p.$3, style: DsTypography.bodyStrong.copyWith(color: c.textPrimary).tabular, textAlign: TextAlign.end, maxLines: 2),
+              ),
+            ]),
+          ),
         ),
     ]);
   }

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:customer/screen_ui/finance/bill_screens.dart';
 import 'package:customer/screen_ui/finance/fin_ds.dart';
@@ -9,6 +11,7 @@ import 'package:customer/themes/ds/ds.dart';
 import 'package:customer/themes/show_toast_dialog.dart';
 import 'package:customer/utils/finance_rules.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:intl/intl.dart';
 
@@ -16,9 +19,15 @@ import 'package:intl/intl.dart';
 List<Map<String, dynamic>> activeWallets(List<Map<String, dynamic>> accounts) =>
     accounts.where((a) => a['status'] == 'active' && (a['kind'] ?? 'wallet') == 'wallet').toList();
 
+/// The wallet shown first (Home and Wallet alike): the one in the
+/// dashboard's currency, else the first.
+Map<String, dynamic>? preferredWallet(List<Map<String, dynamic>> wallets, String? currency) =>
+    wallets.where((w) => w['currency'] == currency).firstOrNull ?? wallets.firstOrNull;
+
 /// Spideli Finance > Wallet: the available balance, wallet actions and the
 /// searchable, filterable history of ledger transactions (server-side
-/// filters, indexed; the search narrows what is loaded).
+/// filters, indexed; the search looks through the latest pages and can go
+/// further back on request).
 class TransactionsScreen extends StatefulWidget {
   /// Shown as the Finance dashboard's Wallet tab (no back arrow).
   final bool asTab;
@@ -32,18 +41,39 @@ class TransactionsScreen extends StatefulWidget {
 class _TransactionsScreenState extends State<TransactionsScreen> {
   static const List<String?> _types = [null, 'deposit', 'withdrawal', 'transfer', 'manual_adjustment', 'reversal'];
   final _search = TextEditingController();
+  Timer? _debounce;
+
+  /// The search applied to the list, a moment after the typing stops.
+  String _query = '';
   String? _type;
   DateTimeRange? _range;
 
   @override
   void dispose() {
+    _debounce?.cancel();
     _search.dispose();
     super.dispose();
   }
 
+  void _onSearch(String text) {
+    setState(() {}); // the clear button
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 300), () {
+      if (mounted) setState(() => _query = text);
+    });
+  }
+
+  void _clearSearch() {
+    _debounce?.cancel();
+    setState(() {
+      _search.clear();
+      _query = '';
+    });
+  }
+
   Future<void> _pickRange() async {
     final now = DateTime.now();
-    final picked = await showDateRangePicker(context: context, firstDate: DateTime(now.year - 5), lastDate: now, initialDateRange: _range);
+    final picked = await finPickDateRange(context, first: DateTime(now.year - 5), last: now, initial: _range);
     if (picked != null) setState(() => _range = picked);
   }
 
@@ -55,38 +85,48 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
       showBack: !widget.asTab,
       body: FinBody(
         children: [
-          StreamBuilder<List<Map<String, dynamic>>>(
-            stream: FinanceService.myAccounts(),
-            builder: (context, snap) {
-              final wallets = activeWallets(snap.data ?? const []);
-              final first = wallets.isEmpty ? null : wallets.first;
-              return FinHero(
-                label: "Available balance".tr,
-                amount: first == null
-                    ? (snap.hasData ? FinanceMoney.format(0, 'XAF') : '…')
-                    : FinanceMoney.format((first['balance'] as num?) ?? 0, first['currency']?.toString() ?? ''),
-                caption: wallets.length > 1
-                    ? wallets.skip(1).map((w) => FinanceMoney.format((w['balance'] as num?) ?? 0, w['currency']?.toString() ?? '')).join(' · ')
-                    : (first == null && snap.hasData ? "Your wallet opens with your first deposit.".tr : "Spideli Finance wallet".tr),
-                footer: FinActions(onHero: true, actions: [
-                  FinAction(Icons.north_east_rounded, "Send".tr, () => Get.to(() => const TransfersScreen())),
-                  FinAction(Icons.receipt_outlined, "Pay bills".tr, () => Get.to(() => const BillsScreen())),
-                  FinAction(Icons.picture_as_pdf_outlined, "Statement".tr, () => shareFinanceStatement(context)),
-                ]),
-              );
-            },
+          StreamBuilder<FinanceSummary?>(
+            stream: FinanceService.summary(),
+            builder: (context, summary) => StreamBuilder<List<Map<String, dynamic>>>(
+              stream: FinanceService.myAccounts(),
+              builder: (context, snap) {
+                final bool failed = snap.hasError;
+                final wallets = activeWallets(snap.data ?? const []);
+                final first = preferredWallet(wallets, summary.data?.currency);
+                final others = wallets.where((w) => w != first).toList();
+                return FinHero(
+                  label: "Available balance".tr,
+                  amount: failed
+                      ? '—'
+                      : first == null
+                          ? (snap.hasData ? FinanceMoney.format(0, summary.data?.currency ?? 'XAF') : '…')
+                          : FinanceMoney.format((first['balance'] as num?) ?? 0, first['currency']?.toString() ?? ''),
+                  caption: failed
+                      ? "Could not load your balances.".tr
+                      : others.isNotEmpty
+                          ? '${"Also".tr}: ${others.map((w) => FinanceMoney.format((w['balance'] as num?) ?? 0, w['currency']?.toString() ?? '')).join(' · ')}'
+                          : (first == null && snap.hasData ? "Your wallet opens with your first deposit.".tr : "Spideli Finance wallet".tr),
+                  footer: FinActions(onHero: true, actions: [
+                    if (failed) FinAction(Icons.refresh_rounded, "Retry".tr, FinanceService.retry),
+                    FinAction(Icons.north_east_rounded, "Send".tr, () => Get.to(() => const TransfersScreen())),
+                    FinAction(Icons.receipt_outlined, "Pay bills".tr, () => Get.to(() => const BillsScreen())),
+                    FinAction(Icons.picture_as_pdf_outlined, "Statement".tr, () => shareFinanceStatement(context)),
+                  ]),
+                );
+              },
+            ),
           ),
           const DsGap(FinSpace.section),
           TextField(
             controller: _search,
-            onChanged: (_) => setState(() {}),
+            onChanged: _onSearch,
             textInputAction: TextInputAction.search,
             decoration: InputDecoration(
               hintText: "Search by reference or description".tr,
               prefixIcon: const Icon(Icons.search_rounded),
               suffixIcon: _search.text.isEmpty
                   ? null
-                  : IconButton(icon: const Icon(Icons.close_rounded), tooltip: "Clear".tr, onPressed: () => setState(_search.clear)),
+                  : IconButton(icon: const Icon(Icons.close_rounded), tooltip: "Clear".tr, onPressed: _clearSearch),
               filled: true,
               fillColor: c.isDark ? c.surfaceRaised : c.surface,
               border: OutlineInputBorder(borderRadius: FinSpace.br, borderSide: BorderSide(color: c.border)),
@@ -122,7 +162,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
             from: _range?.start,
             // The end day counts in full.
             to: _range == null ? null : DateTime(_range!.end.year, _range!.end.month, _range!.end.day + 1),
-            query: _search.text,
+            query: _query,
             grouped: true,
           ),
         ],
@@ -134,11 +174,11 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
 /// Asks for a period and shares the PDF statement of the user's transactions.
 Future<void> shareFinanceStatement(BuildContext context) async {
   final now = DateTime.now();
-  final range = await showDateRangePicker(
-    context: context,
-    firstDate: DateTime(now.year - 5),
-    lastDate: now,
-    initialDateRange: DateTimeRange(start: DateTime(now.year, now.month - 1, now.day), end: now),
+  final range = await finPickDateRange(
+    context,
+    first: DateTime(now.year - 5),
+    last: now,
+    initial: DateTimeRange(start: DateTime(now.year, now.month - 1, now.day), end: now),
   );
   if (range == null) return;
   ShowToastDialog.showLoader("Please wait...".tr);
@@ -157,8 +197,8 @@ Future<void> shareFinanceStatement(BuildContext context) async {
 }
 
 /// The user's transactions as rows: [paged] adds "Load more"; [grouped]
-/// adds day headers; [query] narrows what is loaded (type, reference,
-/// description).
+/// adds day headers; [query] narrows them (type, reference, description),
+/// loading a few more pages by itself when the loaded ones hold few matches.
 class TransactionList extends StatefulWidget {
   final String? type;
   final DateTime? from;
@@ -181,14 +221,23 @@ class _TransactionListState extends State<TransactionList> {
   bool _error = false;
   bool _more = true;
 
+  /// Pages a search loads by itself before it asks (fewer reads).
+  static const int _searchPages = 4;
+  int _searched = 0;
+
   @override
   void initState() {
     super.initState();
-    FinanceService.myAccounts().first.then((accounts) {
-      _sides = {for (final a in accounts) a['id'].toString(): a['normalSide'].toString()};
-      if (mounted) setState(() {});
-    }).catchError((_) {});
     _load();
+  }
+
+  @override
+  void didUpdateWidget(TransactionList old) {
+    super.didUpdateWidget(old);
+    if (old.query != widget.query) {
+      _searched = 0;
+      _searchFurther();
+    }
   }
 
   Future<void> _load() async {
@@ -197,19 +246,33 @@ class _TransactionListState extends State<TransactionList> {
       _error = false;
     });
     try {
-      final page = await FinanceService.transactionsPage(
-        after: _docs.isEmpty ? null : _docs.last,
-        type: widget.type,
-        from: widget.from,
-        to: widget.to,
-        limit: widget.limit,
-      );
+      // The accounts come with the first page: without their sides every
+      // amount would read 0.
+      final res = await Future.wait<Object?>([
+        _sides.isEmpty ? FinanceService.myAccounts().first : Future<Object?>.value(),
+        FinanceService.transactionsPage(after: _docs.isEmpty ? null : _docs.last, type: widget.type, from: widget.from, to: widget.to, limit: widget.limit),
+      ]);
+      if (res[0] is List) {
+        _sides = {for (final a in res[0] as List<Map<String, dynamic>>) a['id'].toString(): a['normalSide'].toString()};
+      }
+      final page = res[1] as QuerySnapshot<Map<String, dynamic>>;
       _docs.addAll(page.docs);
       _more = page.docs.length == widget.limit;
     } catch (_) {
       _error = true;
     }
-    if (mounted) setState(() => _loading = false);
+    if (!mounted) return;
+    setState(() => _loading = false);
+    _searchFurther();
+  }
+
+  /// A search with few matches in what is loaded looks a little further back.
+  void _searchFurther() {
+    if (widget.query.trim().isEmpty || !_more || _loading || _error || _searched >= _searchPages) return;
+    final int found = _docs.where((d) => _matches(d.data() ?? const {})).length;
+    if (found >= widget.limit) return;
+    _searched++;
+    _load();
   }
 
   bool _matches(Map<String, dynamic> t) {
@@ -227,13 +290,40 @@ class _TransactionListState extends State<TransactionList> {
     return ltr(DateFormat('dd MMM yyyy').format(d));
   }
 
+  /// "Load more", with what went wrong when the last page failed.
+  Widget _moreButton() => Padding(
+        padding: const EdgeInsets.only(top: DsSpace.lg),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          if (_error) ...[
+            DsInlineAlert(tone: DsTone.danger, message: "Could not load more transactions. Check your connection and try again.".tr),
+            const DsGap(DsSpace.sm),
+          ],
+          DsButton.secondary(
+            label: (_error ? "Try again" : (widget.query.trim().isEmpty ? "Load more" : "Search older transactions")).tr,
+            loading: _loading,
+            onPressed: _loading ? null : _load,
+          ),
+        ]),
+      );
+
   @override
   Widget build(BuildContext context) {
     if (_error && _docs.isEmpty) return FinState.error("Could not load your transactions.".tr, onRetry: _load);
     if (_loading && _docs.isEmpty) return FinState.loading();
     final items = _docs.map((d) => d.data() ?? const <String, dynamic>{}).where(_matches).toList();
     if (items.isEmpty) {
-      return FinState.empty(Icons.receipt_long_outlined, (_docs.isEmpty ? "No transactions yet" : "No transaction matches your search.").tr);
+      if (_docs.isEmpty) return FinState.empty(Icons.receipt_long_outlined, "No transactions yet".tr);
+      return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        if (_loading)
+          FinState.loading(rows: 2)
+        else
+          FinState.empty(
+            Icons.search_off_rounded,
+            "No transaction matches your search.".tr,
+            message: _more ? '${"Searched your latest transactions".tr}: ${_docs.length}' : null,
+          ),
+        if (widget.paged && (_more || _error)) _moreButton(),
+      ]);
     }
     final List<Widget> children = [];
     if (widget.grouped) {
@@ -270,11 +360,7 @@ class _TransactionListState extends State<TransactionList> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         ...children,
-        if (widget.paged && _more)
-          Padding(
-            padding: const EdgeInsets.only(top: DsSpace.lg),
-            child: DsButton.secondary(label: "Load more".tr, loading: _loading, onPressed: _loading ? null : _load),
-          ),
+        if (widget.paged && (_more || _error)) _moreButton(),
       ],
     );
   }
@@ -320,7 +406,20 @@ class _TransactionListState extends State<TransactionList> {
             if ((t['description'] ?? '').toString().isNotEmpty) FinRow("Description".tr, t['description'].toString()),
             FinRow("Type".tr, LedgerView.typeLabel(t['type']?.toString()).tr),
             FinRow("Date".tr, FinanceUi.date(t['createdAt'])),
-            FinRow("Reference".tr, ltrRef(t['reference'] ?? '-')),
+            FinRow(
+              "Reference".tr,
+              ltrRef(t['reference'] ?? '-'),
+              trailing: (t['reference'] ?? '').toString().isEmpty
+                  ? null
+                  : DsIconButton(
+                      icon: Icons.copy_rounded,
+                      semanticLabel: "Copy reference".tr,
+                      onPressed: () async {
+                        await Clipboard.setData(ClipboardData(text: t['reference'].toString()));
+                        ShowToastDialog.showToast("Reference copied".tr);
+                      },
+                    ),
+            ),
             if ((t['reversalOf'] ?? '').toString().isNotEmpty) FinRow("Reverses".tr, ltrRef(t['reversalOf'])),
             const DsGap(DsSpace.md),
           ],

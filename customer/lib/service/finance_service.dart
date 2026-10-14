@@ -5,6 +5,7 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:customer/constant/constant.dart';
 import 'package:customer/utils/finance_rules.dart';
 import 'package:customer/utils/finance_statement_pdf.dart';
+import 'package:customer/utils/shared_latest.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:get/get.dart';
@@ -60,7 +61,7 @@ abstract final class FinanceService {
 
   /// The user's verification state mirrored on users/{uid} by the server.
   static Stream<Map<String, dynamic>> myProfile() =>
-      _db.collection('users').doc(_uid).snapshots().map((s) => s.data() ?? <String, dynamic>{});
+      _shared(_profiles, () => _db.collection('users').doc(_uid).snapshots().map((s) => s.data() ?? <String, dynamic>{}));
 
   /// The user's applications, newest first (sorted here: one equality filter, no extra index).
   static Stream<List<Map<String, dynamic>>> myApplications() => _db
@@ -115,8 +116,8 @@ abstract final class FinanceService {
   // ── Ledger ────────────────────────────────────────────────────────────
 
   /// The user's accounts (wallets per currency, ...).
-  static Stream<List<Map<String, dynamic>>> myAccounts() =>
-      _db.collection('financial_accounts').where('userId', isEqualTo: _uid).snapshots().map((s) => s.docs.map((d) => d.data()).toList());
+  static Stream<List<Map<String, dynamic>>> myAccounts() => _shared(
+      _accounts, () => _db.collection('financial_accounts').where('userId', isEqualTo: _uid).snapshots().map((s) => s.docs.map((d) => d.data()).toList()));
 
   /// One page of the user's transactions, newest first; [type] and the date
   /// range are applied by Firestore (indexed).
@@ -140,11 +141,30 @@ abstract final class FinanceService {
 
   /// `finance_summaries/{uid}`: the totals the server maintains for the
   /// dashboard; null until the server has written one.
-  static Stream<FinanceSummary?> summary() => _db
-      .collection('finance_summaries')
-      .doc(_uid)
-      .snapshots()
-      .map((s) => FinanceSummary.parse(s.data(), toDate: (v) => v is Timestamp ? v.toDate() : null));
+  static Stream<FinanceSummary?> summary() => _shared(
+      _summaries,
+      () => _db
+          .collection('finance_summaries')
+          .doc(_uid)
+          .snapshots()
+          .map((s) => FinanceSummary.parse(s.data(), toDate: (v) => v is Timestamp ? v.toDate() : null)));
+
+  // The dashboard's live records (profile, wallets, summary) are read on many
+  // screens and tabs at once: one shared subscription per signed-in user,
+  // the latest value handed to each new reader (SharedLatest).
+  static final Map<String, SharedLatest<Map<String, dynamic>>> _profiles = {};
+  static final Map<String, SharedLatest<List<Map<String, dynamic>>>> _accounts = {};
+  static final Map<String, SharedLatest<FinanceSummary?>> _summaries = {};
+
+  static Stream<T> _shared<T>(Map<String, SharedLatest<T>> cache, Stream<T> Function() open) => cache.putIfAbsent(_uid, () => SharedLatest<T>(open)).stream;
+
+  /// Reads the profile, the accounts and the summary again after one of them
+  /// failed (the Retry of the dashboard).
+  static void retry() {
+    for (final cache in <Map<String, SharedLatest<dynamic>>>[_profiles, _accounts, _summaries]) {
+      cache[_uid]?.retry();
+    }
+  }
 
   /// The most transactions one statement holds (the period is narrowed beyond).
   static const int statementMax = 2000;

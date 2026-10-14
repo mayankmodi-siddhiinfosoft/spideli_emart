@@ -1,5 +1,6 @@
 import 'package:customer/screen_ui/finance/bill_screens.dart';
 import 'package:customer/screen_ui/finance/fin_ds.dart';
+import 'package:customer/screen_ui/finance/finance_actions_screen.dart';
 import 'package:customer/screen_ui/finance/finance_dashboard_screen.dart';
 import 'package:customer/screen_ui/finance/finance_ui.dart';
 import 'package:customer/screen_ui/finance/insurance_screens.dart';
@@ -44,7 +45,9 @@ class FinanceHomeScreen extends StatelessWidget {
           return FinBody(children: [
             const _VerificationNotice(),
             _BalanceHero(summary: s),
+            const FinanceActionsSection(),
             if (s != null) _Upcoming(summary: s),
+            if (s != null) _ThisMonth(summary: s),
             FinanceProducts(summary: s, loading: sumSnap.connectionState == ConnectionState.waiting, error: sumSnap.hasError),
             FinSection(
               title: "Recent activity".tr,
@@ -102,9 +105,11 @@ class _BalanceHero extends StatelessWidget {
     return StreamBuilder<List<Map<String, dynamic>>>(
       stream: FinanceService.myAccounts(),
       builder: (context, snap) {
-        if (snap.hasError) return FinState.error("Could not load your balances.".tr);
+        // On a failure the actions stay: sending or paying does not need the
+        // balance on screen.
+        final bool failed = snap.hasError;
         final wallets = activeWallets(snap.data ?? const []);
-        final preferred = wallets.where((w) => w['currency'] == s?.currency).firstOrNull ?? wallets.firstOrNull;
+        final preferred = preferredWallet(wallets, s?.currency);
         final String cur = preferred?['currency']?.toString() ?? s?.currency ?? 'XAF';
         final others = wallets.where((w) => w != preferred).toList();
         String m(dynamic v) => FinanceMoney.format(FinanceSummary.intOf(v), s?.currency ?? cur);
@@ -115,16 +120,19 @@ class _BalanceHero extends StatelessWidget {
         ];
         return FinHero(
           label: "Available balance".tr,
-          amount: !snap.hasData ? '…' : FinanceMoney.format(preferred == null ? 0 : ((preferred['balance'] as num?) ?? 0), cur),
-          caption: !snap.hasData
-              ? null
-              : preferred == null
-                  ? "Your wallet opens with your first deposit.".tr
-                  : others.isEmpty
-                      ? "Spideli Finance wallet".tr
-                      : '${"Also".tr}: ${others.map((w) => FinanceMoney.format((w['balance'] as num?) ?? 0, w['currency']?.toString() ?? '')).join(' · ')}',
+          amount: failed ? '—' : (!snap.hasData ? '…' : FinanceMoney.format(preferred == null ? 0 : ((preferred['balance'] as num?) ?? 0), cur)),
+          caption: failed
+              ? "Could not load your balances.".tr
+              : !snap.hasData
+                  ? null
+                  : preferred == null
+                      ? "Your wallet opens with your first deposit.".tr
+                      : others.isEmpty
+                          ? "Spideli Finance wallet".tr
+                          : '${"Also".tr}: ${others.map((w) => FinanceMoney.format((w['balance'] as num?) ?? 0, w['currency']?.toString() ?? '')).join(' · ')}',
           stats: stats,
           footer: FinActions(onHero: true, actions: [
+            if (failed) FinAction(Icons.refresh_rounded, "Retry".tr, FinanceService.retry),
             FinAction(Icons.north_east_rounded, "Send".tr, () => Get.to(() => const TransfersScreen())),
             FinAction(Icons.receipt_outlined, "Pay bills".tr, () => Get.to(() => const BillsScreen())),
             FinAction(Icons.savings_outlined, "Save".tr, () => Get.to(() => const SavingsListScreen())),
@@ -217,6 +225,37 @@ class _Upcoming extends StatelessWidget {
   }
 }
 
+/// The latest month's money in and out (server totals), next to the month
+/// before, and the way to the full cash flow in Insights.
+class _ThisMonth extends StatelessWidget {
+  final FinanceSummary summary;
+
+  const _ThisMonth({required this.summary});
+
+  @override
+  Widget build(BuildContext context) {
+    final s = summary;
+    if (s.monthly.isEmpty) return const SizedBox.shrink();
+    final last = s.monthly.last;
+    final prev = s.monthly.length > 1 ? s.monthly[s.monthly.length - 2] : null;
+    String m(int v) => FinanceMoney.format(v, s.currency);
+    String month(String key) => ltr(DateFormat('MMM yyyy').format(DateTime.parse('$key-01')));
+    final bool current = last.month == DateFormat('yyyy-MM').format(DateTime.now());
+    return FinSection(
+      title: current ? "This month".tr : month(last.month),
+      actionLabel: "Insights".tr,
+      onAction: () => FinanceDashboardController.showTab(FinanceTab.insights, orOpen: () => const FinanceDashboardScreen(initialTab: FinanceTab.insights)),
+      surface: false,
+      children: [
+        FinMetrics(items: [
+          FinMetric("Money in".tr, m(last.moneyIn), sub: prev == null ? null : '${month(prev.month)}: ${m(prev.moneyIn)}'),
+          FinMetric("Money out".tr, m(last.moneyOut), sub: prev == null ? null : '${month(prev.month)}: ${m(prev.moneyOut)}'),
+        ]),
+      ],
+    );
+  }
+}
+
 /// Every product the user holds, one aligned list (server totals).
 class FinanceProducts extends StatelessWidget {
   final FinanceSummary? summary;
@@ -227,7 +266,7 @@ class FinanceProducts extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (error) return FinState.error("Could not load your overview.".tr);
+    if (error) return FinState.error("Could not load your overview.".tr, onRetry: FinanceService.retry);
     if (loading) return FinState.loading(rows: 3);
     final s = summary;
     if (s == null) {

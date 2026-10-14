@@ -6,8 +6,10 @@ import 'package:customer/themes/ds/ds.dart';
 import 'package:customer/themes/show_toast_dialog.dart';
 import 'package:customer/utils/finance_financing_rules.dart';
 import 'package:customer/utils/finance_rules.dart';
+import 'package:customer/utils/tax_country.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show FilteringTextInputFormatter, LengthLimitingTextInputFormatter;
 import 'package:get/get.dart';
 
 /// Form sections: every field carries its own bottom spacing.
@@ -18,6 +20,9 @@ const EdgeInsets _listPadding = EdgeInsets.symmetric(horizontal: DsSpace.lg);
 
 /// Where the text of a list row starts (icon 40 + gap 12), for lines under a row.
 const double _rowTextStart = 52;
+
+/// The shortest project description and use of funds the reviewers accept.
+const int _minText = 30;
 
 /// Sheets open above the screen (outside its accent scope): keep them navy.
 Widget _navy(Widget child) => Builder(
@@ -31,6 +36,20 @@ IconData _resourceIcon(String? type) => switch (type) {
       _ => Icons.menu_book_outlined,
     };
 
+/// A resource's type; one without is a guide.
+String _resourceType(Map<String, dynamic> r) => r['type']?.toString() ?? 'guide';
+
+String _monthsLabel(dynamic n) => FinanceUi.count(FinanceSummary.intOf(n), "month", "months");
+
+/// "@count of at least @min characters" while [text] is shorter than [_minText].
+String? _counter(String text) {
+  final int n = text.trim().length;
+  return n >= _minText ? null : "@count of at least @min characters".trParams({'count': '$n', 'min': '$_minText'});
+}
+
+/// The accepted files, for the line under a document list.
+String _fileLimits(FinancingConfig cfg) => '${"PDF or photo".tr}, ${"up to".tr} ${ltr('${(cfg.maxFileBytes / (1024 * 1024)).round()} MB')}';
+
 Future<void> _open({String? storagePath, String? url}) async {
   ShowToastDialog.showLoader("Please wait...".tr);
   try {
@@ -42,18 +61,24 @@ Future<void> _open({String? storagePath, String? url}) async {
   }
 }
 
-/// Starts an application: the project first when the user has none.
-Future<void> _newApplication(FinancingConfig cfg) async {
-  final projects = await FinanceFinancingService.projects().first;
-  if (projects.isEmpty) {
-    Get.to(() => ProjectFormScreen(config: cfg, thenApply: true));
-  } else {
-    Get.to(() => ApplicationFormScreen(config: cfg, projects: projects));
+/// The user's projects, read once behind the loader (an application is
+/// made for one of them); null, after a message, when they could not be read.
+Future<List<Map<String, dynamic>>?> _loadProjects() async {
+  ShowToastDialog.showLoader("Please wait...".tr);
+  try {
+    final projects = await FinanceFinancingService.projects().first.timeout(const Duration(seconds: 20));
+    ShowToastDialog.closeLoader();
+    return projects;
+  } catch (_) {
+    ShowToastDialog.closeLoader();
+    ShowToastDialog.showToast("Could not load your projects.".tr);
+    return null;
   }
 }
 
 /// Spideli Finance > Project financing: applications, projects and
-/// resources. `platform_settings/financing` must exist (admin).
+/// resources. `platform_settings/financing` must exist (admin), else "not
+/// available"; a failed read offers Retry.
 class FinancingScreen extends StatefulWidget {
   const FinancingScreen({super.key});
 
@@ -63,17 +88,34 @@ class FinancingScreen extends StatefulWidget {
 
 class _FinancingScreenState extends State<FinancingScreen> {
   int _tab = 0;
-  final Future<FinancingConfig?> _config = FinanceFinancingService.config();
+
+  /// The projects are being read for a new application: a second tap waits.
+  bool _opening = false;
+
+  /// Starts an application: the project first when the user has none.
+  Future<void> _newApplication(FinancingConfig cfg) async {
+    if (_opening) return;
+    _opening = true;
+    final projects = await _loadProjects();
+    _opening = false;
+    if (projects == null || !mounted) return;
+    if (projects.isEmpty) {
+      Get.to(() => ProjectFormScreen(config: cfg, thenApply: true));
+    } else {
+      Get.to(() => ApplicationFormScreen(config: cfg, projects: projects));
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<FinancingConfig?>(
-      future: _config,
-      builder: (context, cfgSnap) {
-        final cfg = cfgSnap.data;
+    return FinConfig<FinancingConfig>(
+      load: FinanceFinancingService.config,
+      builder: (context, st) {
+        final cfg = st.config;
+        final Widget? placeholder = st.placeholder(Icons.business_center_outlined, "Project financing is not available yet.".tr);
         return FinScaffold(
           title: "Project financing".tr,
-          bottomBar: cfg == null || _tab == 2
+          bottomBar: cfg == null || !st.ready || _tab == 2
               ? null
               : DsStickyBar(
                   child: _tab == 0
@@ -95,10 +137,8 @@ class _FinancingScreenState extends State<FinancingScreen> {
                         ),
                 ),
           body: FinBody(children: [
-            if (cfgSnap.connectionState == ConnectionState.waiting)
-              FinState.loading()
-            else if (cfg == null)
-              FinState.empty(Icons.business_center_outlined, "Project financing is not available yet.".tr)
+            if (placeholder != null || cfg == null)
+              placeholder ?? FinState.loading()
             else ...[
               DsSegmentedTabs(
                 segments: [DsSegment("Applications".tr), DsSegment("Projects".tr), DsSegment("Resources".tr)],
@@ -125,41 +165,43 @@ class _Applications extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<List<Map<String, dynamic>>>(
-      stream: FinanceFinancingService.applications(),
-      builder: (context, snap) {
-        if (snap.hasError) return FinState.error("Could not load your applications.".tr);
-        if (!snap.hasData) return FinState.loading();
-        if (snap.data!.isEmpty) {
-          return FinState.empty(
-            Icons.business_center_outlined,
-            "You have no financing application yet.".tr,
-            message: "Describe your project, choose the financing you need, add your business plan and financial statements, then follow the review here.".tr,
+    return FinReload(
+      builder: (context, retry) => StreamBuilder<List<Map<String, dynamic>>>(
+        stream: FinanceFinancingService.applications(),
+        builder: (context, snap) {
+          if (snap.hasError) return FinState.error("Could not load your applications.".tr, onRetry: retry);
+          if (!snap.hasData) return FinState.loading();
+          if (snap.data!.isEmpty) {
+            return FinState.empty(
+              Icons.business_center_outlined,
+              "You have no financing application yet.".tr,
+              message: "Describe your project, choose the financing you need, add your business plan and financial statements, then follow the review here.".tr,
+            );
+          }
+          return FinSection(
+            divided: true,
+            padding: _listPadding,
+            children: [
+              for (final a in snap.data!)
+                FinListTile(
+                  icon: Icons.business_center_outlined,
+                  iconTone: DsTone.brand,
+                  title: a['projectName']?.toString() ?? '-',
+                  subtitle: [
+                    FinancingLabels.type(a['financingType']?.toString()).tr,
+                    if (a['durationMonths'] != null) _monthsLabel(a['durationMonths']),
+                    if (a['submittedAt'] != null) '${"Submitted on".tr} ${FinanceUi.day(a['submittedAt'])}',
+                  ].join(' · '),
+                  amount: FinanceMoney.format(FinanceSummary.intOf(a['amount']), a['currency']?.toString() ?? ''),
+                  status: a['status']?.toString(),
+                  statusLabel: a['status'] == null ? null : FinancingStatus.label(a['status'].toString()).tr,
+                  chevron: true,
+                  onTap: () => Get.to(() => ApplicationScreen(applicationId: a['id'].toString(), config: config)),
+                ),
+            ],
           );
-        }
-        return FinSection(
-          divided: true,
-          padding: _listPadding,
-          children: [
-            for (final a in snap.data!)
-              FinListTile(
-                icon: Icons.business_center_outlined,
-                iconTone: DsTone.brand,
-                title: a['projectName']?.toString() ?? '-',
-                subtitle: [
-                  FinancingLabels.type(a['financingType']?.toString()).tr,
-                  if (a['durationMonths'] != null) '${a['durationMonths']} ${"months".tr}',
-                  if (a['submittedAt'] != null) '${"Submitted on".tr} ${FinanceUi.day(a['submittedAt'])}',
-                ].join(' · '),
-                amount: FinanceMoney.format(FinanceSummary.intOf(a['amount']), a['currency']?.toString() ?? ''),
-                status: a['status']?.toString(),
-                statusLabel: a['status'] == null ? null : FinancingStatus.label(a['status'].toString()).tr,
-                chevron: true,
-                onTap: () => Get.to(() => ApplicationScreen(applicationId: a['id'].toString(), config: config)),
-              ),
-          ],
-        );
-      },
+        },
+      ),
     );
   }
 }
@@ -171,32 +213,34 @@ class _Projects extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<List<Map<String, dynamic>>>(
-      stream: FinanceFinancingService.projects(),
-      builder: (context, snap) {
-        if (snap.hasError) return FinState.error("Could not load your projects.".tr);
-        if (!snap.hasData) return FinState.loading(rows: 2);
-        if (snap.data!.isEmpty) return FinState.empty(Icons.add_business_outlined, "You have no project yet.".tr);
-        return FinSection(
-          divided: true,
-          padding: _listPadding,
-          children: [
-            for (final p in snap.data!)
-              FinListTile(
-                icon: Icons.storefront_outlined,
-                iconTone: DsTone.brand,
-                title: p['name']?.toString() ?? '-',
-                subtitle: [
-                  FinancingLabels.sector(p['sector']?.toString()).tr,
-                  if ((p['stage'] ?? '').toString().isNotEmpty) FinancingLabels.stage(p['stage'].toString()).tr,
-                  if ((p['city'] ?? '').toString().isNotEmpty) p['city'].toString(),
-                ].join(' · '),
-                chevron: true,
-                onTap: () => Get.to(() => ProjectFormScreen(config: config, project: p)),
-              ),
-          ],
-        );
-      },
+    return FinReload(
+      builder: (context, retry) => StreamBuilder<List<Map<String, dynamic>>>(
+        stream: FinanceFinancingService.projects(),
+        builder: (context, snap) {
+          if (snap.hasError) return FinState.error("Could not load your projects.".tr, onRetry: retry);
+          if (!snap.hasData) return FinState.loading(rows: 2);
+          if (snap.data!.isEmpty) return FinState.empty(Icons.add_business_outlined, "You have no project yet.".tr);
+          return FinSection(
+            divided: true,
+            padding: _listPadding,
+            children: [
+              for (final p in snap.data!)
+                FinListTile(
+                  icon: Icons.storefront_outlined,
+                  iconTone: DsTone.brand,
+                  title: p['name']?.toString() ?? '-',
+                  subtitle: [
+                    FinancingLabels.sector(p['sector']?.toString()).tr,
+                    if ((p['stage'] ?? '').toString().isNotEmpty) FinancingLabels.stage(p['stage'].toString()).tr,
+                    if ((p['city'] ?? '').toString().isNotEmpty) p['city'].toString(),
+                  ].join(' · '),
+                  chevron: true,
+                  onTap: () => Get.to(() => ProjectFormScreen(config: config, project: p)),
+                ),
+            ],
+          );
+        },
+      ),
     );
   }
 }
@@ -213,55 +257,57 @@ class _ResourcesState extends State<_Resources> {
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<List<Map<String, dynamic>>>(
-      stream: FinanceFinancingService.resources(),
-      builder: (context, snap) {
-        if (snap.hasError) return FinState.error("Could not load the resources.".tr);
-        if (!snap.hasData) return FinState.loading();
-        final all = snap.data!;
-        final types = {for (final r in all) r['type']?.toString() ?? 'guide'}.toList();
-        final list = all.where((r) => _type == null || r['type'] == _type).toList();
-        if (all.isEmpty) return FinState.empty(Icons.menu_book_outlined, "No resource is published yet.".tr);
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (types.length > 1)
-              Padding(
-                padding: const EdgeInsets.only(top: DsSpace.lg),
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(children: [
-                    for (final t in [null, ...types])
-                      Padding(
-                        padding: const EdgeInsetsDirectional.only(end: DsSpace.sm),
-                        child: ChoiceChip(
-                          label: Text(t == null ? "All".tr : FinancingLabels.resource(t).tr),
-                          selected: _type == t,
-                          onSelected: (_) => setState(() => _type = t),
+    return FinReload(
+      builder: (context, retry) => StreamBuilder<List<Map<String, dynamic>>>(
+        stream: FinanceFinancingService.resources(),
+        builder: (context, snap) {
+          if (snap.hasError) return FinState.error("Could not load the resources.".tr, onRetry: retry);
+          if (!snap.hasData) return FinState.loading();
+          final all = snap.data!;
+          if (all.isEmpty) return FinState.empty(Icons.menu_book_outlined, "No resource is published yet.".tr);
+          final types = {for (final r in all) _resourceType(r)}.toList();
+          final list = all.where((r) => _type == null || _resourceType(r) == _type).toList();
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (types.length > 1)
+                Padding(
+                  padding: const EdgeInsets.only(top: DsSpace.lg),
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(children: [
+                      for (final t in [null, ...types])
+                        Padding(
+                          padding: const EdgeInsetsDirectional.only(end: DsSpace.sm),
+                          child: ChoiceChip(
+                            label: Text(t == null ? "All".tr : FinancingLabels.resource(t).tr),
+                            selected: _type == t,
+                            onSelected: (_) => setState(() => _type = t),
+                          ),
                         ),
-                      ),
-                  ]),
-                ),
-              ),
-            FinSection(
-              top: types.length > 1 ? DsSpace.md : FinSpace.section,
-              divided: true,
-              padding: _listPadding,
-              children: [
-                for (final r in list)
-                  FinListTile(
-                    icon: _resourceIcon(r['type']?.toString()),
-                    iconTone: DsTone.brand,
-                    title: r['title']?.toString() ?? '-',
-                    subtitle: r['summary']?.toString(),
-                    chevron: true,
-                    onTap: () => Get.to(() => ResourceScreen(resource: r)),
+                    ]),
                   ),
-              ],
-            ),
-          ],
-        );
-      },
+                ),
+              FinSection(
+                top: types.length > 1 ? DsSpace.md : FinSpace.section,
+                divided: true,
+                padding: _listPadding,
+                children: [
+                  for (final r in list)
+                    FinListTile(
+                      icon: _resourceIcon(_resourceType(r)),
+                      iconTone: DsTone.brand,
+                      title: r['title']?.toString() ?? '-',
+                      subtitle: r['summary']?.toString(),
+                      chevron: true,
+                      onTap: () => Get.to(() => ResourceScreen(resource: r)),
+                    ),
+                ],
+              ),
+            ],
+          );
+        },
+      ),
     );
   }
 }
@@ -276,18 +322,19 @@ class ResourceScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = DsColors.of(context);
     final r = resource;
+    final String type = _resourceType(r);
     final String path = (r['storagePath'] ?? '').toString();
     final String url = (r['url'] ?? '').toString();
     final String summary = (r['summary'] ?? '').toString();
     final String body = (r['body'] ?? '').toString();
     final bool downloadable = path.isNotEmpty || url.startsWith('https://');
     return FinScaffold(
-      title: FinancingLabels.resource(r['type']?.toString()).tr,
+      title: FinancingLabels.resource(type).tr,
       bottomBar: !downloadable
           ? null
           : DsStickyBar(
               child: DsButton.primary(
-                label: (r['type'] == 'template' ? "Download the template" : "Open the document").tr,
+                label: (type == 'template' ? "Download the template" : "Open the document").tr,
                 icon: Icons.download_rounded,
                 size: DsButtonSize.lg,
                 expand: true,
@@ -295,11 +342,32 @@ class ResourceScreen extends StatelessWidget {
               ),
             ),
       body: FinBody(children: [
-        FinHeader(
-          icon: _resourceIcon(r['type']?.toString()),
-          title: r['title']?.toString() ?? '-',
-          subtitle: summary.isEmpty ? null : summary,
-          below: r['updatedAt'] == null ? null : finFreshness(context, '${"Updated".tr} ${FinanceUi.day(r['updatedAt'])}'),
+        // A document's title, in a title style (not a money figure).
+        FinSurface(
+          padding: const EdgeInsets.all(DsSpace.lg),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              DsIconWell(icon: _resourceIcon(type), tone: DsTone.brand, size: 40),
+              const DsGap(DsSpace.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Semantics(header: true, child: Text(r['title']?.toString() ?? '-', style: DsTypography.title.copyWith(color: c.textPrimary))),
+                    if (summary.isNotEmpty) ...[
+                      const DsGap(DsSpace.xxs),
+                      Text(summary, style: DsTypography.bodySm.copyWith(color: c.textSecondary)),
+                    ],
+                    if (r['updatedAt'] != null) ...[
+                      const DsGap(DsSpace.sm),
+                      finFreshness(context, '${"Updated".tr} ${FinanceUi.day(r['updatedAt'])}'),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
         if (body.isNotEmpty)
           FinSection(
@@ -328,37 +396,73 @@ class ProjectFormScreen extends StatefulWidget {
 }
 
 class _ProjectFormScreenState extends State<ProjectFormScreen> {
+  /// Countries by their English name (the list the app already uses for
+  /// taxes); the value saved is the name, as typed before.
+  static final List<String> _countries = (TaxCountry.isoEnglishNames.values.map((names) => names.first).toSet().toList()..sort());
+
   late final Map<String, dynamic> _p = widget.project ?? const {};
   late final _name = TextEditingController(text: _p['name']?.toString() ?? '');
-  late final _country = TextEditingController(text: _p['country']?.toString() ?? '');
   late final _city = TextEditingController(text: _p['city']?.toString() ?? '');
   late final _description = TextEditingController(text: _p['description']?.toString() ?? '');
   late final _employees = TextEditingController(text: _p['employees']?.toString() ?? '');
   late final _founded = TextEditingController(text: _p['foundedYear']?.toString() ?? '');
   late final _website = TextEditingController(text: _p['website']?.toString() ?? '');
+  late String? _country = (_p['country'] ?? '').toString().trim().isEmpty ? null : _p['country'].toString().trim();
   late String _sector = widget.config.sectors.contains(_p['sector']) ? _p['sector'].toString() : widget.config.sectors.first;
   late String? _stage = widget.config.stages.contains(_p['stage']) ? _p['stage'].toString() : (widget.config.stages.isEmpty ? null : widget.config.stages.first);
 
+  /// Fields checked once the user has left them (no error while typing).
+  final _nameFocus = FocusNode();
+  final _descriptionFocus = FocusNode();
+  final _foundedFocus = FocusNode();
+  final Set<FocusNode> _left = {};
+
+  @override
+  void initState() {
+    super.initState();
+    for (final f in [_nameFocus, _descriptionFocus, _foundedFocus]) {
+      f.addListener(() {
+        if (!f.hasFocus) _left.add(f);
+        if (mounted) setState(() {});
+      });
+    }
+  }
+
   @override
   void dispose() {
-    for (final c in [_name, _country, _city, _description, _employees, _founded, _website]) {
+    for (final c in [_name, _city, _description, _employees, _founded, _website]) {
       c.dispose();
+    }
+    for (final f in [_nameFocus, _descriptionFocus, _foundedFocus]) {
+      f.dispose();
     }
     super.dispose();
   }
 
+  /// The year founded, or null; [ok] is false when something invalid is typed.
+  ({int? year, bool ok}) get _year {
+    final String text = _founded.text.trim();
+    if (text.isEmpty) return (year: null, ok: true);
+    final int? year = int.tryParse(text);
+    return (year: year, ok: year != null && year >= 1900 && year <= DateTime.now().year);
+  }
+
+  List<String> _missing() => [
+        if (_name.text.trim().length < 2) "Project or company name".tr,
+        if (_description.text.trim().length < _minText) "Description".tr,
+        if (!_year.ok) "Year founded".tr,
+      ];
+
   Future<void> _save() async {
-    if (_name.text.trim().length < 2) return ShowToastDialog.showToast("Enter the project or company name.".tr);
-    if (_description.text.trim().length < 30) return ShowToastDialog.showToast("Describe the project in a few sentences.".tr);
-    final int? year = int.tryParse(_founded.text.trim());
-    if (_founded.text.trim().isNotEmpty && (year == null || year < 1900 || year > DateTime.now().year)) return ShowToastDialog.showToast("Check the year.".tr);
+    if (_missing().isNotEmpty) return;
+    final int? year = _year.year;
     String? id;
     final ok = await FinanceUi.run(() async {
       id = await FinanceFinancingService.saveProject(widget.project?['id']?.toString(), {
         'name': _name.text.trim(),
         'sector': _sector,
         'stage': ?_stage,
-        'country': _country.text.trim(),
+        'country': _country ?? '',
         'city': _city.text.trim(),
         'description': _description.text.trim(),
         'employees': ?int.tryParse(_employees.text.trim()),
@@ -380,9 +484,24 @@ class _ProjectFormScreenState extends State<ProjectFormScreen> {
   Widget build(BuildContext context) {
     final c = DsColors.of(context);
     final cfg = widget.config;
+    final missing = _missing();
+    final String name = _name.text.trim();
+    final String description = _description.text.trim();
+    final bool descriptionShort = _left.contains(_descriptionFocus) && !_descriptionFocus.hasFocus && description.isNotEmpty && description.length < _minText;
+    final bool yearWrong = !_year.ok && (_founded.text.trim().length >= 4 || (_left.contains(_foundedFocus) && !_foundedFocus.hasFocus));
+    final countries = [..._countries, if (_country != null && !_countries.contains(_country)) _country!];
     return FinScaffold(
       title: (widget.project == null ? "Add a project" : "Edit the project").tr,
-      bottomBar: DsStickyBar(child: DsButton.primary(label: "Save".tr, size: DsButtonSize.lg, expand: true, onPressed: _save)),
+      bottomBar: DsStickyBar(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            FinMissing(missing),
+            DsButton.primary(label: "Save".tr, size: DsButtonSize.lg, expand: true, onPressed: missing.isEmpty ? _save : null),
+          ],
+        ),
+      ),
       body: FinBody(children: [
         FinSection(
           title: "The project".tr,
@@ -393,12 +512,20 @@ class _ProjectFormScreenState extends State<ProjectFormScreen> {
               padding: const EdgeInsets.only(bottom: DsSpace.md),
               child: Text("The company or activity that needs the financing.".tr, style: DsTypography.bodySm.copyWith(color: c.textSecondary)),
             ),
-            DsTextField(label: "Project or company name".tr, controller: _name, requiredMark: true, textCapitalization: TextCapitalization.words),
-            DsDropdown<String>(
+            DsTextField(
+              label: "Project or company name".tr,
+              controller: _name,
+              focusNode: _nameFocus,
+              requiredMark: true,
+              textCapitalization: TextCapitalization.words,
+              errorText: _left.contains(_nameFocus) && !_nameFocus.hasFocus && name.length == 1 ? "Enter the project or company name.".tr : null,
+              onChanged: (_) => setState(() {}),
+            ),
+            FinPickerField<String>(
               label: "Sector".tr,
               value: _sector,
-              items: [for (final s in cfg.sectors) DropdownMenuItem(value: s, child: Text(FinancingLabels.sector(s).tr))],
-              onChanged: (v) => setState(() => _sector = v ?? _sector),
+              options: [for (final s in cfg.sectors) (s, FinancingLabels.sector(s).tr)],
+              onChanged: (v) => setState(() => _sector = v),
             ),
             if (cfg.stages.isNotEmpty)
               DsDropdown<String>(
@@ -411,26 +538,50 @@ class _ProjectFormScreenState extends State<ProjectFormScreen> {
               label: "Description".tr,
               hint: "What you do, for whom, and what makes it work.".tr,
               controller: _description,
+              focusNode: _descriptionFocus,
               maxLines: 6,
               requiredMark: true,
+              helper: descriptionShort ? null : _counter(description),
+              errorText: descriptionShort ? '${"Describe the project in a few sentences.".tr} ${_counter(description)}' : null,
+              onChanged: (_) => setState(() {}),
             ),
           ],
         ),
         FinSection(
-          title: "Details".tr,
+          title: "Details (optional)".tr,
           padding: _formPadding,
           children: [
+            FinPickerField<String>(
+              label: "Country".tr,
+              value: _country,
+              options: [for (final n in countries) (n, n)],
+              searchHint: "Search a country".tr,
+              onChanged: (v) => setState(() => _country = v),
+            ),
+            DsTextField(label: "City".tr, controller: _city),
             Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Expanded(child: DsTextField(label: "Country".tr, controller: _country)),
+              Expanded(
+                child: DsTextField(
+                  label: "Employees".tr,
+                  controller: _employees,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                ),
+              ),
               const DsGap(DsSpace.sm),
-              Expanded(child: DsTextField(label: "City".tr, controller: _city)),
+              Expanded(
+                child: DsTextField(
+                  label: "Year founded".tr,
+                  controller: _founded,
+                  focusNode: _foundedFocus,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(4)],
+                  errorText: yearWrong ? "Check the year.".tr : null,
+                  onChanged: (_) => setState(() {}),
+                ),
+              ),
             ]),
-            Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Expanded(child: DsTextField(label: "Employees".tr, controller: _employees, keyboardType: TextInputType.number)),
-              const DsGap(DsSpace.sm),
-              Expanded(child: DsTextField(label: "Year founded".tr, controller: _founded, keyboardType: TextInputType.number)),
-            ]),
-            DsTextField(label: "Website (optional)".tr, controller: _website, keyboardType: TextInputType.url),
+            DsTextField(label: "Website".tr, controller: _website, keyboardType: TextInputType.url),
           ],
         ),
       ]),
@@ -458,25 +609,46 @@ class _ApplicationFormScreenState extends State<ApplicationFormScreen> {
   late String _type = widget.config.financingTypes.contains(_a['financingType']) ? _a['financingType'].toString() : widget.config.financingTypes.first;
   late String _currency = widget.config.currencies.contains(_a['currency']) ? _a['currency'].toString() : widget.config.currencies.first;
   late int? _months = widget.config.durationsMonths.contains(FinanceSummary.intOf(_a['durationMonths'])) ? FinanceSummary.intOf(_a['durationMonths']) : null;
-  late final _amount = TextEditingController(
-      text: _a['amount'] != null && FinanceMoney.exponent(_currency) == 0 ? '${FinanceSummary.intOf(_a['amount'])}' : '');
+
+  /// The saved amount in major units, whatever the currency's decimals.
+  late final _amount = TextEditingController(text: _a['amount'] == null ? '' : FinanceAmount.input(FinanceSummary.intOf(_a['amount']), _currency));
   late final _use = TextEditingController(text: _a['useOfFunds']?.toString() ?? '');
+
+  /// The use of funds is checked once the user has left it.
+  final _useFocus = FocusNode();
+  bool _useLeft = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _useFocus.addListener(() {
+      if (!_useFocus.hasFocus) _useLeft = true;
+      if (mounted) setState(() {});
+    });
+  }
 
   @override
   void dispose() {
     _amount.dispose();
     _use.dispose();
+    _useFocus.dispose();
     super.dispose();
+  }
+
+  List<String> _missing() {
+    final cfg = widget.config;
+    return [
+      if (_project == null) "Project".tr,
+      if (cfg.amountProblem(FinanceAmount.parse(_amount.text, _currency), _currency) != null) "Amount requested".tr,
+      if (cfg.hasDuration(_type) && _months == null) "Duration".tr,
+      if (_use.text.trim().length < _minText) "Use of the funds".tr,
+    ];
   }
 
   Future<void> _save() async {
     final cfg = widget.config;
     final int? amount = FinanceAmount.parse(_amount.text, _currency);
-    if (_project == null) return ShowToastDialog.showToast("Choose the project.".tr);
-    final problem = cfg.amountProblem(amount, _currency);
-    if (problem != null) return ShowToastDialog.showToast(problem.tr);
-    if (cfg.hasDuration(_type) && _months == null) return ShowToastDialog.showToast("Choose the duration.".tr);
-    if (_use.text.trim().length < 30) return ShowToastDialog.showToast("Explain how the money will be used.".tr);
+    if (_missing().isNotEmpty) return;
     final fields = {
       'projectId': _project,
       'financingType': _type,
@@ -506,62 +678,66 @@ class _ApplicationFormScreenState extends State<ApplicationFormScreen> {
   Widget build(BuildContext context) {
     final c = DsColors.of(context);
     final cfg = widget.config;
-    final int? amount = FinanceAmount.parse(_amount.text, _currency);
     final required = cfg.requiredFor(_type);
+    final missing = _missing();
+    final String use = _use.text.trim();
+    final bool useShort = _useLeft && !_useFocus.hasFocus && use.isNotEmpty && use.length < _minText;
     final String next = "You add your documents and submit the application on the next screen.".tr;
     return FinScaffold(
       title: (widget.application == null ? "New application" : "Edit the application").tr,
-      bottomBar: DsStickyBar(child: DsButton.primary(label: "Save".tr, size: DsButtonSize.lg, expand: true, onPressed: _save)),
+      bottomBar: DsStickyBar(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            FinMissing(missing),
+            DsButton.primary(label: "Save".tr, size: DsButtonSize.lg, expand: true, onPressed: missing.isEmpty ? _save : null),
+          ],
+        ),
+      ),
       body: FinBody(children: [
         FinSection(
           title: "Financing".tr,
           top: 0,
           padding: _formPadding,
           children: [
-            DsDropdown<String>(
-              label: "Project".tr,
-              requiredMark: true,
-              value: _project,
-              items: [for (final p in widget.projects) DropdownMenuItem(value: p['id'].toString(), child: Text(p['name']?.toString() ?? '-'))],
-              onChanged: widget.application == null ? (v) => setState(() => _project = v) : null,
-            ),
+            // The project of a saved application cannot change.
+            if (widget.application == null)
+              FinPickerField<String>(
+                label: "Project".tr,
+                requiredMark: true,
+                value: _project,
+                options: [for (final p in widget.projects) (p['id'].toString(), p['name']?.toString() ?? '-')],
+                onChanged: (v) => setState(() => _project = v),
+              )
+            else
+              DsDropdown<String>(
+                label: "Project".tr,
+                requiredMark: true,
+                // A project deleted since is not in the list: show none rather than fail.
+                value: widget.projects.any((p) => p['id'].toString() == _project) ? _project : null,
+                items: [for (final p in widget.projects) DropdownMenuItem(value: p['id'].toString(), child: Text(p['name']?.toString() ?? '-'))],
+                onChanged: null,
+              ),
             DsFieldLabel("Type of financing".tr, required: true),
             Wrap(spacing: DsSpace.sm, runSpacing: DsSpace.xs, children: [
               for (final t in cfg.financingTypes) ChoiceChip(label: Text(FinancingLabels.type(t).tr), selected: _type == t, onSelected: (_) => setState(() => _type = t)),
             ]),
             const DsGap(DsSpace.lg),
-            Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Expanded(
-                child: DsTextField(
-                  label: "Amount requested".tr,
-                  controller: _amount,
-                  requiredMark: true,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  errorText: _amount.text.isEmpty ? null : cfg.amountProblem(amount, _currency)?.tr,
-                  helper: [
-                    if (cfg.minAmount[_currency] != null) FinanceMoney.format(cfg.minAmount[_currency]!, _currency),
-                    if (cfg.maxAmount[_currency] != null) FinanceMoney.format(cfg.maxAmount[_currency]!, _currency),
-                  ].join(' - '),
-                  onChanged: (_) => setState(() {}),
-                ),
-              ),
-              if (cfg.currencies.length > 1) ...[
-                const DsGap(DsSpace.sm),
-                SizedBox(
-                  width: 110,
-                  child: DsDropdown<String>(
-                    label: "Currency".tr,
-                    value: _currency,
-                    items: [for (final cur in cfg.currencies) DropdownMenuItem(value: cur, child: Text(cur))],
-                    onChanged: (v) => setState(() => _currency = v ?? _currency),
-                  ),
-                ),
-              ],
-            ]),
+            FinAmountField(
+              label: "Amount requested".tr,
+              controller: _amount,
+              currency: _currency,
+              currencies: cfg.currencies,
+              onCurrencyChanged: (v) => setState(() => _currency = v),
+              min: cfg.minAmount[_currency],
+              max: cfg.maxAmount[_currency],
+              onChanged: (_) => setState(() {}),
+            ),
             if (cfg.hasDuration(_type)) ...[
               DsFieldLabel("Duration".tr, required: true),
               Wrap(spacing: DsSpace.sm, runSpacing: DsSpace.xs, children: [
-                for (final m in cfg.durationsMonths) ChoiceChip(label: Text('$m ${"months".tr}'), selected: _months == m, onSelected: (_) => setState(() => _months = m)),
+                for (final m in cfg.durationsMonths) ChoiceChip(label: Text(_monthsLabel(m)), selected: _months == m, onSelected: (_) => setState(() => _months = m)),
               ]),
               const DsGap(DsSpace.lg),
             ],
@@ -569,8 +745,12 @@ class _ApplicationFormScreenState extends State<ApplicationFormScreen> {
               label: "Use of the funds".tr,
               hint: "Equipment, stock, working capital, hiring... with the main amounts.".tr,
               controller: _use,
+              focusNode: _useFocus,
               maxLines: 6,
               requiredMark: true,
+              helper: useShort ? null : _counter(use),
+              errorText: useShort ? '${"Explain how the money will be used.".tr} ${_counter(use)}' : null,
+              onChanged: (_) => setState(() {}),
             ),
           ],
         ),
@@ -578,7 +758,7 @@ class _ApplicationFormScreenState extends State<ApplicationFormScreen> {
         if (required.isNotEmpty)
           FinSection(
             title: "Required documents".tr,
-            footnote: next,
+            footnote: '$next ${_fileLimits(cfg)}.',
             children: [
               for (final t in required)
                 Padding(
@@ -601,7 +781,8 @@ class _ApplicationFormScreenState extends State<ApplicationFormScreen> {
   }
 }
 
-/// One application: details, documents, submission and the review.
+/// One application: details, documents, submission and the review. An
+/// application that no longer exists says so; a failed read offers Retry.
 class ApplicationScreen extends StatefulWidget {
   final String applicationId;
   final FinancingConfig config;
@@ -615,6 +796,11 @@ class ApplicationScreen extends StatefulWidget {
 class _ApplicationScreenState extends State<ApplicationScreen> {
   final _message = TextEditingController();
   bool _declared = false;
+  late Stream<Map<String, dynamic>?> _application = FinanceFinancingService.application(widget.applicationId);
+  late Stream<List<Map<String, dynamic>>> _documents = FinanceFinancingService.documents(widget.applicationId);
+
+  /// The projects are being read for the edit form: a second tap waits.
+  bool _opening = false;
 
   @override
   void dispose() {
@@ -622,19 +808,41 @@ class _ApplicationScreenState extends State<ApplicationScreen> {
     super.dispose();
   }
 
+  Future<void> _edit(Map<String, dynamic> a) async {
+    if (_opening) return;
+    _opening = true;
+    final projects = await _loadProjects();
+    _opening = false;
+    if (projects == null || !mounted) return;
+    Get.to(() => ApplicationFormScreen(config: widget.config, projects: projects, application: a));
+  }
+
   Future<void> _upload(String type) async {
     final cfg = widget.config;
-    final PlatformFile? file = await FilePicker.pickFile(type: FileType.custom, allowedExtensions: extensionsFor(cfg.allowedContentTypes));
+    final PlatformFile? file;
+    try {
+      file = await FilePicker.pickFile(type: FileType.custom, allowedExtensions: extensionsFor(cfg.allowedContentTypes));
+    } catch (_) {
+      // No access to the files, or no picker available.
+      ShowToastDialog.showToast("Could not open your files. Check that the app may access them, then try again.".tr);
+      return;
+    }
     if (file == null) return;
     final String contentType = contentTypeOf(file.name);
-    final int size = file.lengthSync() ?? await file.length() ?? 0;
+    int size;
+    try {
+      size = file.lengthSync() ?? await file.length() ?? 0;
+    } catch (_) {
+      size = 0;
+    }
     final problem = cfg.fileProblem(contentType, size);
-    if (problem != null) return ShowToastDialog.showToast(problem.tr);
+    // A file too large says what is accepted.
+    if (problem != null) return ShowToastDialog.showToast(size > cfg.maxFileBytes ? '${problem.tr} ${_fileLimits(cfg)}.' : problem.tr);
     await FinanceUi.run(() async {
       await FinanceFinancingService.addDocument(
         applicationId: widget.applicationId,
         type: type,
-        name: file.name,
+        name: file!.name,
         contentType: contentType,
         size: size,
         path: file.path,
@@ -658,42 +866,59 @@ class _ApplicationScreenState extends State<ApplicationScreen> {
     if (type != null) await _upload(type);
   }
 
+  /// Removing a document cannot be undone: confirm which one first.
+  Future<void> _remove(Map<String, dynamic> d) async {
+    final ok = await finConfirm(
+      title: "Remove this document?".tr,
+      lines: [(FinancingLabels.document(d['type']?.toString()).tr, d['name']?.toString() ?? '-')],
+      confirmLabel: "Remove".tr,
+      destructive: true,
+    );
+    if (ok) await FinanceUi.run(() => FinanceFinancingService.removeDocument(d['id'].toString()));
+  }
+
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<Map<String, dynamic>?>(
-      stream: FinanceFinancingService.application(widget.applicationId),
+      stream: _application,
       builder: (context, snap) {
         final a = snap.data;
+        final Widget? state = FinState.of(
+          snap,
+          gone: "This application is no longer available.",
+          onRetry: () => setState(() => _application = FinanceFinancingService.application(widget.applicationId)),
+        );
         return FinScaffold(
           title: "Financing application".tr,
-          body: snap.hasError
-              ? FinBody(children: [FinState.error("Could not load this application.".tr)])
-              : a == null
-                  ? FinBody(children: [FinState.loading(rows: 4)])
-                  : StreamBuilder<List<Map<String, dynamic>>>(
-                      stream: FinanceFinancingService.documents(widget.applicationId),
-                      builder: (context, ds) => _body(context, a, ds.data ?? const []),
-                    ),
+          body: state != null || a == null
+              ? FinBody(children: [state ?? FinState.loading(rows: 4)])
+              : StreamBuilder<List<Map<String, dynamic>>>(
+                  stream: _documents,
+                  builder: (context, ds) => _body(context, a, ds.hasError ? null : ds.data, documentsFailed: ds.hasError),
+                ),
         );
       },
     );
   }
 
-  Widget _body(BuildContext context, Map<String, dynamic> a, List<Map<String, dynamic>> docs) {
+  /// [docs] is null until the documents are read (or when that failed):
+  /// nothing is called missing before then.
+  Widget _body(BuildContext context, Map<String, dynamic> a, List<Map<String, dynamic>>? docs, {required bool documentsFailed}) {
     final c = DsColors.of(context);
     final cfg = widget.config;
     final String status = a['status']?.toString() ?? 'draft';
     final String cur = a['currency']?.toString() ?? '';
     final String type = a['financingType']?.toString() ?? '';
     final required = cfg.requiredFor(type);
-    final missing = missingDocuments(required, docs);
+    final bool docsReady = docs != null;
+    final missing = docsReady ? missingDocuments(required, docs) : required;
     final bool editable = FinancingStatus.editable(status);
     final bool infoRequested = status == 'additional_info_required';
     final bool ended = status == 'rejected' || status == 'withdrawn';
     // A request for more information happens during the review.
     final int at = FinancingStatus.steps.indexOf(infoRequested ? 'under_review' : status);
     final String project = a['projectName']?.toString() ?? '-';
-    final String? months = a['durationMonths'] == null ? null : '${a['durationMonths']} ${"months".tr}';
+    final String? months = a['durationMonths'] == null ? null : _monthsLabel(a['durationMonths']);
     String m(dynamic v) => FinanceMoney.format(FinanceSummary.intOf(v), cur);
     return FinBody(children: [
       FinHeader(
@@ -718,12 +943,7 @@ class _ApplicationScreenState extends State<ApplicationScreen> {
       FinSection(
         title: "Details".tr,
         actionLabel: editable ? "Edit".tr : null,
-        onAction: !editable
-            ? null
-            : () async {
-                final projects = await FinanceFinancingService.projects().first;
-                Get.to(() => ApplicationFormScreen(config: cfg, projects: projects, application: a));
-              },
+        onAction: !editable ? null : () => _edit(a),
         children: [
           FinRow("Project".tr, project),
           FinRow("Type of financing".tr, FinancingLabels.type(type).tr),
@@ -745,59 +965,67 @@ class _ApplicationScreenState extends State<ApplicationScreen> {
             ),
         ],
       ),
-      if (required.isNotEmpty)
-        FinSection(
-          title: "Required documents".tr,
-          divided: true,
-          padding: _listPadding,
-          children: [
-            for (final t in required)
-              if (missing.contains(t))
-                FinListTile(
-                  icon: Icons.radio_button_unchecked_rounded,
-                  iconTone: DsTone.warning,
-                  title: FinancingLabels.document(t).tr,
-                  subtitle: editable ? "Required".tr : null,
-                  status: editable ? null : 'pending',
-                  statusLabel: editable ? null : "Missing".tr,
-                  trailing: editable ? DsButton.ghost(label: "Add".tr, icon: Icons.upload_file_rounded, size: DsButtonSize.sm, onPressed: () => _upload(t)) : null,
-                )
-              else
-                FinListTile(
-                  icon: Icons.check_circle_rounded,
-                  iconTone: DsTone.success,
-                  title: FinancingLabels.document(t).tr,
-                  status: 'completed',
-                  statusLabel: "Added".tr,
+      if (documentsFailed)
+        FinState.error(
+          "Could not load your documents.".tr,
+          onRetry: () => setState(() => _documents = FinanceFinancingService.documents(widget.applicationId)),
+        )
+      else if (!docsReady)
+        FinState.loading(rows: 2)
+      else ...[
+        if (required.isNotEmpty)
+          FinSection(
+            title: "Required documents".tr,
+            divided: true,
+            padding: _listPadding,
+            children: [
+              for (final t in required)
+                if (missing.contains(t))
+                  FinListTile(
+                    icon: Icons.radio_button_unchecked_rounded,
+                    iconTone: DsTone.warning,
+                    title: FinancingLabels.document(t).tr,
+                    subtitle: editable ? "Required".tr : null,
+                    status: editable ? null : 'pending',
+                    statusLabel: editable ? null : "Missing".tr,
+                    trailing: editable ? DsButton.ghost(label: "Add".tr, icon: Icons.upload_file_rounded, size: DsButtonSize.sm, onPressed: () => _upload(t)) : null,
+                  )
+                else
+                  FinListTile(
+                    icon: Icons.check_circle_rounded,
+                    iconTone: DsTone.success,
+                    title: FinancingLabels.document(t).tr,
+                    status: 'completed',
+                    statusLabel: "Added".tr,
+                  ),
+            ],
+          ),
+        if (docs.isNotEmpty || editable)
+          FinSection(
+            title: "Uploaded documents".tr,
+            divided: true,
+            padding: _listPadding,
+            footnote: '${"Only you and the authorised reviewers can see them.".tr} ${_fileLimits(cfg)}',
+            children: [
+              for (final d in docs) _document(context, d, editable),
+              if (editable)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: DsSpace.xs),
+                  child: Align(
+                    alignment: AlignmentDirectional.centerStart,
+                    child: DsButton.ghost(label: "Add another document".tr, icon: Icons.add_rounded, onPressed: _addOther),
+                  ),
                 ),
-          ],
-        ),
-      if (docs.isNotEmpty || editable)
-        FinSection(
-          title: "Uploaded documents".tr,
-          divided: true,
-          padding: _listPadding,
-          footnote:
-              '${"Only you and the authorised reviewers can see them.".tr} ${"PDF or photo".tr}, ${"up to".tr} ${ltr('${(cfg.maxFileBytes / (1024 * 1024)).round()} MB')}',
-          children: [
-            for (final d in docs) _document(context, d, editable),
-            if (editable)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: DsSpace.xs),
-                child: Align(
-                  alignment: AlignmentDirectional.centerStart,
-                  child: DsButton.ghost(label: "Add another document".tr, icon: Icons.add_rounded, onPressed: _addOther),
-                ),
-              ),
-          ],
-        ),
+            ],
+          ),
+      ],
       if (editable)
         FinSection(
           title: (infoRequested ? "Send back to the reviewers" : "Submit the application").tr,
           padding: const EdgeInsets.all(DsSpace.lg),
           children: [
             if (infoRequested) DsTextField(label: "Message to the reviewers (optional)".tr, controller: _message, maxLines: 3),
-            if (missing.isNotEmpty)
+            if (docsReady && missing.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(bottom: DsSpace.sm),
                 child: DsInlineAlert(tone: DsTone.warning, message: '${"Still missing".tr}: ${missing.map((t) => FinancingLabels.document(t).tr).join(', ')}'),
@@ -818,7 +1046,7 @@ class _ApplicationScreenState extends State<ApplicationScreen> {
                 label: (infoRequested ? "Send" : "Submit").tr,
                 icon: Icons.send_rounded,
                 expand: true,
-                onPressed: verified && _declared && FinancingStatus.canSubmit(status, missing)
+                onPressed: verified && _declared && docsReady && FinancingStatus.canSubmit(status, missing)
                     ? () async {
                         if (await FinanceUi.run(() => FinanceFinancingService.submit(widget.applicationId, _message.text.trim()), success: "Application submitted")) {
                           setState(() {
@@ -884,13 +1112,7 @@ class _ApplicationScreenState extends State<ApplicationScreen> {
           status: status,
           statusLabel: status == null ? null : FinancingLabels.documentStatus(status).tr,
           onTap: path.isEmpty ? null : () => _open(storagePath: path),
-          trailing: !editable
-              ? null
-              : DsIconButton(
-                  icon: Icons.delete_outline_rounded,
-                  semanticLabel: "Remove".tr,
-                  onPressed: () => FinanceUi.run(() => FinanceFinancingService.removeDocument(d['id'].toString())),
-                ),
+          trailing: !editable ? null : DsIconButton(icon: Icons.delete_outline_rounded, semanticLabel: "Remove".tr, onPressed: () => _remove(d)),
         ),
         if (note.isNotEmpty)
           Padding(

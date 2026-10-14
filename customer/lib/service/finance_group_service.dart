@@ -231,3 +231,34 @@ abstract final class FinanceGroupService {
         if (againstUserId != null) 'againstUserId': againstUserId,
       });
 }
+
+/// One idempotency key per intended operation. A retry of the SAME request
+/// (same action, target, amount and payment) - after a lost answer, a
+/// timeout, an app restart of the screen - reuses the key until the request
+/// succeeds, so the server can never run it twice; any other request gets a
+/// new key. [intent] names the request, e.g.
+/// `savings.contribute:<goalId>:<amount>:<method>:<number>`.
+abstract final class FinanceRequestKeys {
+  static final Map<String, String> _open = {};
+
+  /// The key for [intent]: the open one, else a new one.
+  static String of(String intent) => _open.putIfAbsent(intent, FinanceGroupService.newRequestKey);
+
+  /// [intent] succeeded: a later request of it is a new operation.
+  static void done(String intent) => _open.remove(intent);
+
+  /// The intent of a payment step: [action], its [target], [amount] and the
+  /// chosen [payment] (method and number).
+  /// Sends [send] with the key of its intent (action, target, amount,
+  /// payment): a retry of the same request reuses the key until the server
+  /// has answered, so it can never be paid twice.
+  static Future<T> send<T>(String action, String target, int amount, Map<String, dynamic> payment, Future<T> Function(String key) send) async {
+    final String intent = intentOf(action, target, amount, payment);
+    final T reply = await send(of(intent));
+    done(intent);
+    return reply;
+  }
+
+  static String intentOf(String action, String target, int amount, Map<String, dynamic> payment) =>
+      '$action:$target:$amount:${payment['method'] ?? ''}:${payment['number'] ?? ''}';
+}

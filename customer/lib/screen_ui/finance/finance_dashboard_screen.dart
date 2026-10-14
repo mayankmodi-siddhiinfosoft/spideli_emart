@@ -247,8 +247,8 @@ class FinanceInsightsTab extends StatelessWidget {
             if (snap.connectionState == ConnectionState.waiting)
               FinState.loading(rows: 3)
             else if (snap.hasError)
-              FinState.error("Could not load your overview.".tr)
-            else if (s == null || s.monthly.isEmpty)
+              FinState.error("Could not load your overview.".tr, onRetry: FinanceService.retry)
+            else if (s == null || (s.monthly.isEmpty && s.last30Days.isEmpty))
               FinState.empty(Icons.insights_outlined, "Your cash flow appears here once you use Spideli Finance services.".tr)
             else
               FinanceCashFlow(summary: s),
@@ -308,18 +308,24 @@ class FinanceProfileTab extends StatelessWidget {
           final String? status = snap.data?['kycStatus']?.toString();
           final bool verified = (snap.data?['kycLevel']?.toString() ?? '').isNotEmpty;
           final String shown = verified ? KycStatus.approved : (status ?? 'none');
+          // No verification status until the profile has loaded (not a
+          // "not started" flash), nor when it could not be read.
+          final bool known = snap.hasData;
+          final String? chip = known ? (shown == KycStatus.approved ? 'verified' : shown) : null;
+          final String? chipLabel = known ? KycStatus.label(verified ? KycStatus.approved : status).tr : null;
           return FinBody(children: [
-            _ProfileHeader(verified: verified, statusLabel: KycStatus.label(verified ? KycStatus.approved : status).tr, status: shown == KycStatus.approved ? 'verified' : shown),
+            _ProfileHeader(status: chip, statusLabel: chipLabel, loading: !known && !snap.hasError),
             FinSection(
               title: "Account".tr,
               divided: true,
               children: [
                 FinListTile(
                   icon: verified ? Icons.verified_user_outlined : Icons.badge_outlined,
-                  iconTone: verified ? DsTone.success : DsTone.warning,
+                  iconTone: !known ? DsTone.neutral : (verified ? DsTone.success : DsTone.warning),
                   title: "Document verification".tr,
-                  status: shown == KycStatus.approved ? 'verified' : shown,
-                  statusLabel: KycStatus.label(verified ? KycStatus.approved : status).tr,
+                  subtitle: snap.hasError ? "Could not load your verification status.".tr : null,
+                  status: chip,
+                  statusLabel: chipLabel,
                   chevron: true,
                   onTap: () => Get.to(() => const KycScreen()),
                 ),
@@ -383,11 +389,12 @@ class FinanceProfileTab extends StatelessWidget {
 /// The user, as Spideli Finance knows them: initials, name, contact and
 /// whether their identity is verified.
 class _ProfileHeader extends StatelessWidget {
-  final bool verified;
-  final String status;
-  final String statusLabel;
+  /// The verification status, once known.
+  final String? status;
+  final String? statusLabel;
+  final bool loading;
 
-  const _ProfileHeader({required this.verified, required this.status, required this.statusLabel});
+  const _ProfileHeader({required this.status, required this.statusLabel, required this.loading});
 
   @override
   Widget build(BuildContext context) {
@@ -420,8 +427,13 @@ class _ProfileHeader extends StatelessWidget {
                   const DsGap(DsSpace.xxs),
                   Text(contact, style: DsTypography.caption.copyWith(color: c.textSecondary), maxLines: 2, overflow: TextOverflow.ellipsis),
                 ],
-                const DsGap(DsSpace.sm),
-                FinStatusChip(status: status, label: statusLabel),
+                if (status != null && statusLabel != null) ...[
+                  const DsGap(DsSpace.sm),
+                  FinStatusChip(status: status!, label: statusLabel!),
+                ] else if (loading) ...[
+                  const DsGap(DsSpace.sm),
+                  DsShimmer(child: DsSkeleton.line(width: 96, height: 20)),
+                ],
               ],
             ),
           ),

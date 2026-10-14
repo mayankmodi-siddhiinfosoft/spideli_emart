@@ -5,10 +5,10 @@ import 'package:customer/screen_ui/finance/savings_screens.dart';
 import 'package:customer/service/finance_group_service.dart';
 import 'package:customer/service/finance_service.dart';
 import 'package:customer/themes/ds/ds.dart';
-import 'package:customer/themes/show_toast_dialog.dart';
 import 'package:customer/utils/finance_group_rules.dart';
 import 'package:customer/utils/finance_rules.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show FilteringTextInputFormatter;
 import 'package:get/get.dart';
 import 'package:intl/intl.dart';
 
@@ -28,20 +28,28 @@ Widget _quiet(BuildContext context, String text) => Padding(
       child: Text(text, style: DsTypography.body.copyWith(color: DsColors.of(context).textSecondary)),
     );
 
+/// "@count of at least @min characters" while a text is shorter than [min].
+String? _minHelper(String text, int min) {
+  final int n = text.trim().length;
+  return n >= min ? null : "@count of at least @min characters".trParams({'count': '$n', 'min': '$min'});
+}
+
 /// Spideli Finance > Tontines: invitations and the user's tontines.
-/// `platform_settings/tontines` must exist (admin), else "not available".
+/// `platform_settings/tontines` must exist (admin), else "not available";
+/// a failed read offers Retry.
 class TontineListScreen extends StatelessWidget {
   const TontineListScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<TontineConfig?>(
-      future: FinanceGroupService.tontineConfig(),
-      builder: (context, cfgSnap) {
-        final cfg = cfgSnap.data;
+    return FinConfig<TontineConfig>(
+      load: FinanceGroupService.tontineConfig,
+      builder: (context, st) {
+        final cfg = st.config;
+        final Widget? placeholder = st.placeholder(Icons.groups_2_outlined, "Tontines are not available yet.".tr);
         return FinScaffold(
           title: "Tontine".tr,
-          bottomBar: cfg == null
+          bottomBar: !st.ready
               ? null
               : DsStickyBar(
                   child: DsButton.primary(
@@ -49,17 +57,12 @@ class TontineListScreen extends StatelessWidget {
                     icon: Icons.add_rounded,
                     size: DsButtonSize.lg,
                     expand: true,
-                    onPressed: () => Get.to(() => TontineFormScreen(config: cfg)),
+                    onPressed: () => Get.to(() => TontineFormScreen(config: cfg!)),
                   ),
                 ),
           body: FinBody(
             children: [
-              if (cfgSnap.connectionState == ConnectionState.waiting)
-                FinState.loading()
-              else if (cfg == null)
-                FinState.empty(Icons.groups_2_outlined, "Tontines are not available yet.".tr)
-              else
-                ...const [_TontinesHero(), _TontineInvitations(), _TontineList()],
+              if (placeholder != null) placeholder else ...const [_TontinesHero(), _TontineInvitations(), _TontineList()],
             ],
           ),
         );
@@ -127,8 +130,47 @@ class _Invitation extends StatelessWidget {
   }
 }
 
+/// The terms an invitation carries when the server copied them onto it
+/// (same names as `tontines/{id}`): an invitee cannot read the tontine
+/// itself until they join. Empty when the invitation has none.
+List<(String, String)> _inviteTerms(Map<String, dynamic> i) {
+  final String cur = i['currency']?.toString() ?? '';
+  final int amount = FinanceSummary.intOf(i['contributionAmount']);
+  final String? frequency = i['frequency']?.toString();
+  final int limit = FinanceSummary.intOf(i['membersLimit']);
+  final List? members = i['memberIds'] is List ? i['memberIds'] as List : null;
+  final DateTime? start = FinanceGroupService.toDate(i['startDate']);
+  return [
+    if (amount > 0 && cur.isNotEmpty) ("Amount per member, per cycle".tr, FinanceMoney.format(amount, cur)),
+    if (Frequency.all.contains(frequency)) ("Frequency".tr, Frequency.label(frequency).tr),
+    if (limit > 0) members == null ? ("Number of members".tr, '$limit') : ("Members".tr, '${members.length}/$limit'),
+    if (start != null) ("First contribution date".tr, _date(start)),
+  ];
+}
+
 class _TontineInvitations extends StatelessWidget {
   const _TontineInvitations();
+
+  /// Joining commits the user to a contribution every cycle: what is known
+  /// of the commitment first.
+  Future<void> _join(Map<String, dynamic> i) async {
+    final String inviter = i['invitedByName']?.toString() ?? '-';
+    final terms = _inviteTerms(i);
+    final String rules = (i['rules'] ?? '').toString().trim();
+    final String commitment = "By joining, you commit to paying the contribution every cycle until every member has received the pot.".tr;
+    final ok = await finConfirm(
+      title: "Join this tontine?".tr,
+      message: [
+        commitment,
+        if (terms.isEmpty) "Ask @name for the amount, the frequency and the rules before you join.".trParams({'name': inviter}),
+        if (rules.isNotEmpty) '${"Rules".tr}: $rules',
+      ].join('\n\n'),
+      lines: [...terms, ("Invited by".tr, inviter)],
+      confirmLabel: "Join".tr,
+      cancelLabel: "Not now".tr,
+    );
+    if (ok) await FinanceUi.run(() => FinanceGroupService.respondToInvite(i['tontineId'].toString(), true), success: "You joined the tontine");
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -144,9 +186,12 @@ class _TontineInvitations extends StatelessWidget {
             for (final i in invites)
               _Invitation(
                 title: i['tontineName']?.toString() ?? "Tontine".tr,
-                subtitle: '${"Invited by".tr} ${i['invitedByName'] ?? '-'}',
+                subtitle: [
+                  '${"Invited by".tr} ${i['invitedByName'] ?? '-'}',
+                  for (final (_, value) in _inviteTerms(i).take(2)) value,
+                ].join(' · '),
                 onDecline: () => FinanceUi.run(() => FinanceGroupService.respondToInvite(i['tontineId'].toString(), false)),
-                onJoin: () => FinanceUi.run(() => FinanceGroupService.respondToInvite(i['tontineId'].toString(), true), success: "You joined the tontine"),
+                onJoin: () => _join(i),
               ),
           ],
         );
@@ -160,41 +205,43 @@ class _TontineList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<List<Tontine>>(
-      stream: FinanceGroupService.myTontines(),
-      builder: (context, snap) {
-        if (snap.hasError) return FinState.error("Could not load your tontines.".tr);
-        if (!snap.hasData) return FinState.loading();
-        if (snap.data!.isEmpty) {
-          return FinState.empty(
-            Icons.groups_2_outlined,
-            "No tontine yet".tr,
-            message: "Save as a group: every member contributes each cycle, and one member receives the pot in turn.".tr,
+    return FinReload(
+      builder: (context, retry) => StreamBuilder<List<Tontine>>(
+        stream: FinanceGroupService.myTontines(),
+        builder: (context, snap) {
+          if (snap.hasError) return FinState.error("Could not load your tontines.".tr, onRetry: retry);
+          if (!snap.hasData) return FinState.loading();
+          if (snap.data!.isEmpty) {
+            return FinState.empty(
+              Icons.groups_2_outlined,
+              "No tontine yet".tr,
+              message: "Save as a group: every member contributes each cycle, and one member receives the pot in turn.".tr,
+            );
+          }
+          return FinSection(
+            title: "Your tontines".tr,
+            divided: true,
+            children: [
+              for (final t in snap.data!)
+                FinListTile(
+                  icon: Icons.groups_2_outlined,
+                  iconTone: DsTone.brand,
+                  title: t.name,
+                  subtitle: [
+                    Frequency.label(t.frequency).tr,
+                    FinanceUi.count(t.memberIds.length, "member", "members"),
+                    if (t.nextDueAt != null) '${"Next contribution".tr}: ${_date(t.nextDueAt)}',
+                  ].join(' · '),
+                  amount: "@amount per cycle".trParams({'amount': FinanceMoney.format(t.contributionAmount, t.currency)}),
+                  status: _st(t.status),
+                  statusLabel: Tontine.statusLabel(t.status).tr,
+                  chevron: true,
+                  onTap: () => Get.to(() => TontineScreen(tontineId: t.id)),
+                ),
+            ],
           );
-        }
-        return FinSection(
-          title: "Your tontines".tr,
-          divided: true,
-          children: [
-            for (final t in snap.data!)
-              FinListTile(
-                icon: Icons.groups_2_outlined,
-                iconTone: DsTone.brand,
-                title: t.name,
-                subtitle: [
-                  Frequency.label(t.frequency).tr,
-                  '${t.memberIds.length} ${"members".tr}',
-                  if (t.nextDueAt != null) '${"Next contribution".tr}: ${_date(t.nextDueAt)}',
-                ].join(' · '),
-                amount: FinanceMoney.format(t.contributionAmount, t.currency),
-                status: _st(t.status),
-                statusLabel: Tontine.statusLabel(t.status).tr,
-                chevron: true,
-                onTap: () => Get.to(() => TontineScreen(tontineId: t.id)),
-              ),
-          ],
-        );
-      },
+        },
+      ),
     );
   }
 }
@@ -214,6 +261,7 @@ class _TontineFormScreenState extends State<TontineFormScreen> {
   final _description = TextEditingController();
   final _rules = TextEditingController();
   final _amount = TextEditingController();
+  final _startText = TextEditingController();
   late final _limit = TextEditingController(text: '${widget.config.minMembers}');
   late String _currency = widget.config.currencies.first;
   late String _frequency = widget.config.frequencies.first;
@@ -222,24 +270,35 @@ class _TontineFormScreenState extends State<TontineFormScreen> {
 
   @override
   void dispose() {
-    for (final c in [_name, _description, _rules, _amount, _limit]) {
+    for (final c in [_name, _description, _rules, _amount, _limit, _startText]) {
       c.dispose();
     }
     super.dispose();
   }
 
+  /// The contribution, when it is a valid amount of at least the minimum.
+  int? get _validAmount {
+    final int? v = FinanceAmount.parse(_amount.text, _currency);
+    return v == null || v < widget.config.minFor(_currency) ? null : v;
+  }
+
+  /// The number of members, when within the configured range.
+  int? get _validLimit {
+    final int? v = int.tryParse(_limit.text.trim());
+    return v == null || v < widget.config.minMembers || v > widget.config.maxMembers ? null : v;
+  }
+
+  List<String> _missing() => [
+        if (_name.text.trim().isEmpty) "Name".tr,
+        if (_validAmount == null) "Amount per member, per cycle".tr,
+        if (_validLimit == null) "Number of members".tr,
+        if (_start == null) "First contribution date".tr,
+      ];
+
   Future<void> _save() async {
-    final cfg = widget.config;
-    final int? amount = FinanceAmount.parse(_amount.text, _currency);
-    final int? limit = int.tryParse(_limit.text.trim());
-    if (_name.text.trim().isEmpty) return ShowToastDialog.showToast("Please give the tontine a name.".tr);
-    if (amount == null || amount < cfg.minFor(_currency)) {
-      return ShowToastDialog.showToast("${"The contribution must be at least".tr} ${FinanceMoney.format(cfg.minFor(_currency), _currency)}.");
-    }
-    if (limit == null || limit < cfg.minMembers || limit > cfg.maxMembers) {
-      return ShowToastDialog.showToast("${"Members: between".tr} ${cfg.minMembers} ${"and".tr} ${cfg.maxMembers}.");
-    }
-    if (_start == null) return ShowToastDialog.showToast("Please choose the first contribution date.".tr);
+    final int? amount = _validAmount;
+    final int? limit = _validLimit;
+    if (_missing().isNotEmpty || amount == null || limit == null) return;
     String? id;
     final ok = await FinanceUi.run(() async {
       id = await FinanceGroupService.createTontine(
@@ -260,11 +319,22 @@ class _TontineFormScreenState extends State<TontineFormScreen> {
   @override
   Widget build(BuildContext context) {
     final cfg = widget.config;
-    final int? amount = FinanceAmount.parse(_amount.text, _currency);
-    final int? limit = int.tryParse(_limit.text.trim());
+    final int? amount = _validAmount;
+    final int? limit = _validLimit;
+    final missing = _missing();
+    final String range = "Between @min and @max members.".trParams({'min': '${cfg.minMembers}', 'max': '${cfg.maxMembers}'});
     return FinScaffold(
       title: "Create a tontine".tr,
-      bottomBar: DsStickyBar(child: DsButton.primary(label: "Create tontine".tr, size: DsButtonSize.lg, expand: true, onPressed: _save)),
+      bottomBar: DsStickyBar(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            FinMissing(missing),
+            DsButton.primary(label: "Create tontine".tr, size: DsButtonSize.lg, expand: true, onPressed: missing.isEmpty ? _save : null),
+          ],
+        ),
+      ),
       body: FinBody(
         children: [
           FinSection(
@@ -272,7 +342,7 @@ class _TontineFormScreenState extends State<TontineFormScreen> {
             top: 0,
             padding: _formPadding,
             children: [
-              DsTextField(label: "Name".tr, controller: _name, requiredMark: true),
+              DsTextField(label: "Name".tr, controller: _name, requiredMark: true, onChanged: (_) => setState(() {})),
               DsTextField(label: "Description".tr, controller: _description, maxLines: 2),
               DsTextField(label: "Rules agreed by the members".tr, hint: "Penalties for late payment, how disputes are settled...".tr, controller: _rules, maxLines: 4),
             ],
@@ -281,52 +351,48 @@ class _TontineFormScreenState extends State<TontineFormScreen> {
             title: "Contributions".tr,
             padding: _formPadding,
             children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: DsTextField(
-                      label: "Amount per member, per cycle".tr,
-                      controller: _amount,
-                      requiredMark: true,
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                      onChanged: (_) => setState(() {}),
-                    ),
-                  ),
-                  const DsGap(DsSpace.sm),
-                  SizedBox(
-                    width: 110,
-                    child: DsDropdown<String>(
-                      label: "Currency".tr,
-                      value: _currency,
-                      items: [for (final c in cfg.currencies) DropdownMenuItem(value: c, child: Text(c))],
-                      onChanged: (v) => setState(() => _currency = v ?? _currency),
-                    ),
-                  ),
-                ],
+              FinAmountField(
+                label: "Amount per member, per cycle".tr,
+                controller: _amount,
+                currency: _currency,
+                currencies: cfg.currencies,
+                onCurrencyChanged: (v) => setState(() => _currency = v),
+                min: cfg.minFor(_currency),
+                onChanged: (_) => setState(() {}),
               ),
               DsDropdown<String>(
                 label: "Frequency".tr,
                 value: _frequency,
+                requiredMark: true,
                 items: [for (final f in cfg.frequencies) DropdownMenuItem(value: f, child: Text(Frequency.label(f).tr))],
                 onChanged: (v) => setState(() => _frequency = v ?? _frequency),
               ),
               DsTextField(
-                label: "${"Number of members".tr} (${cfg.minMembers}-${cfg.maxMembers})",
+                label: "Number of members".tr,
                 controller: _limit,
+                requiredMark: true,
                 keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                helper: _limit.text.trim().isNotEmpty && limit == null ? null : range,
+                errorText: _limit.text.trim().isNotEmpty && limit == null ? range : null,
                 onChanged: (_) => setState(() {}),
               ),
               DsTextField(
                 label: "First contribution date".tr,
-                controller: TextEditingController(text: _date(_start) == '-' ? '' : _date(_start)),
+                controller: _startText,
                 readOnly: true,
                 requiredMark: true,
                 suffix: const Icon(Icons.event_outlined, size: 18),
                 onTap: () async {
                   final now = DateTime.now();
-                  final d = await showDatePicker(context: context, initialDate: _start ?? now.add(const Duration(days: 7)), firstDate: now, lastDate: DateTime(now.year + 2));
-                  if (d != null) setState(() => _start = d);
+                  final today = DateTime(now.year, now.month, now.day);
+                  final d = await showDatePicker(context: context, initialDate: _start ?? today.add(const Duration(days: 7)), firstDate: today, lastDate: DateTime(now.year + 2));
+                  if (d != null) {
+                    setState(() {
+                      _start = d;
+                      _startText.text = _date(d);
+                    });
+                  }
                 },
               ),
               if (cfg.payoutOrderMethods.length > 1)
@@ -338,7 +404,7 @@ class _TontineFormScreenState extends State<TontineFormScreen> {
                 ),
             ],
           ),
-          // What the members commit to, before the tontine is created.
+          // What the members commit to, once the figures are valid.
           if (amount != null && limit != null)
             FinSection(
               title: "Summary".tr,
@@ -347,6 +413,8 @@ class _TontineFormScreenState extends State<TontineFormScreen> {
                 FinRow("Amount per member, per cycle".tr, FinanceMoney.format(amount, _currency)),
                 FinRow("Frequency".tr, Frequency.label(_frequency).tr),
                 FinRow("Number of members".tr, '$limit'),
+                if (_start != null) FinRow("First contribution date".tr, _date(_start)),
+                FinRow("Who receives the pot first".tr, _orderLabel(_order).tr),
                 FinRow("Pot per cycle".tr, FinanceMoney.format(amount * limit, _currency), strong: true),
               ],
             ),
@@ -359,7 +427,8 @@ class _TontineFormScreenState extends State<TontineFormScreen> {
 String _orderLabel(String m) => const {'fixed': 'An order set by the administrator', 'random': 'A random draw when the tontine starts'}[m] ?? m;
 
 /// One tontine: overview with the current cycle (group transparency),
-/// members and payout order, history, disputes.
+/// members and payout order, history, disputes. A tontine that no longer
+/// exists says so; a failed read offers Retry.
 class TontineScreen extends StatefulWidget {
   final String tontineId;
 
@@ -371,54 +440,57 @@ class TontineScreen extends StatefulWidget {
 
 class _TontineScreenState extends State<TontineScreen> {
   int _tab = 0;
-  TontineConfig? _config;
+  late Stream<Tontine?> _tontine = FinanceGroupService.tontine(widget.tontineId);
+  late final Stream<List<Map<String, dynamic>>> _members = FinanceGroupService.members(widget.tontineId);
 
-  @override
-  void initState() {
-    super.initState();
-    FinanceGroupService.tontineConfig().then((c) {
-      if (mounted) setState(() => _config = c);
-    }).catchError((_) {});
-  }
+  /// The payout order being edited, kept here so switching tabs does not
+  /// lose it; null when there is no unsaved change.
+  List<String>? _order;
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<Tontine?>(
-      stream: FinanceGroupService.tontine(widget.tontineId),
-      builder: (context, snap) {
-        final t = snap.data;
-        return FinScaffold(
-          title: t?.name ?? "Tontine".tr,
-          body: snap.hasError
-              ? FinBody(children: [FinState.error("Could not load this tontine.".tr)])
-              : t == null
-                  ? FinBody(children: [FinState.loading(rows: 4)])
-                  : StreamBuilder<List<Map<String, dynamic>>>(
-                      stream: FinanceGroupService.members(t.id),
-                      builder: (context, mSnap) {
-                        final members = mSnap.data ?? const [];
-                        return FinBody(
-                          children: [
-                            _TontineHero(tontine: t),
-                            const DsGap(FinSpace.section),
-                            DsSegmentedTabs(
-                              scrollable: true,
-                              segments: [DsSegment("Overview".tr), DsSegment("Members".tr), DsSegment("History".tr), DsSegment("Disputes".tr)],
-                              index: _tab,
-                              onChanged: (i) => setState(() => _tab = i),
-                            ),
-                            switch (_tab) {
-                              0 => _Overview(tontine: t, members: members, config: _config),
-                              1 => _Members(tontine: t, members: members, config: _config),
-                              2 => _History(tontine: t, members: members),
-                              _ => _Disputes(tontine: t, members: members),
-                            },
-                          ],
-                        );
-                      },
-                    ),
-        );
-      },
+    return FinConfig<TontineConfig>(
+      load: FinanceGroupService.tontineConfig,
+      builder: (context, cfg) => StreamBuilder<Tontine?>(
+        stream: _tontine,
+        builder: (context, snap) {
+          final t = snap.data;
+          final Widget? state = FinState.of(
+            snap,
+            gone: "This tontine is no longer available.",
+            onRetry: () => setState(() => _tontine = FinanceGroupService.tontine(widget.tontineId)),
+          );
+          return FinScaffold(
+            title: t?.name ?? "Tontine".tr,
+            body: state != null || t == null
+                ? FinBody(children: [state ?? FinState.loading(rows: 4)])
+                : StreamBuilder<List<Map<String, dynamic>>>(
+                    stream: _members,
+                    builder: (context, mSnap) {
+                      final members = mSnap.data ?? const [];
+                      return FinBody(
+                        children: [
+                          _TontineHero(tontine: t),
+                          const DsGap(FinSpace.section),
+                          DsSegmentedTabs(
+                            scrollable: true,
+                            segments: [DsSegment("Overview".tr), DsSegment("Members".tr), DsSegment("History".tr), DsSegment("Disputes".tr)],
+                            index: _tab,
+                            onChanged: (i) => setState(() => _tab = i),
+                          ),
+                          switch (_tab) {
+                            0 => _Overview(tontine: t, members: members, config: cfg.config, configFailed: cfg.failed, onRetryConfig: cfg.retry),
+                            1 => _Members(tontine: t, members: members, order: _order, onOrderChanged: (o) => setState(() => _order = o)),
+                            2 => _History(tontine: t, members: members),
+                            _ => _Disputes(tontine: t, members: members),
+                          },
+                        ],
+                      );
+                    },
+                  ),
+          );
+        },
+      ),
     );
   }
 }
@@ -447,10 +519,17 @@ class _TontineHero extends StatelessWidget {
   }
 }
 
-String _nameOf(List<Map<String, dynamic>> members, String? uid) {
-  final m = members.where((x) => x['userId'] == uid).toList();
-  if (uid == FinanceService.uid) return "You".tr;
-  return m.isEmpty ? (uid ?? '-') : (m.first['displayName']?.toString() ?? uid!);
+/// A member's name: "You", their display name or email, else "Member 3"
+/// (their place in [ids]) while the member list loads or when it failed -
+/// never a raw account id.
+String _nameOf(List<Map<String, dynamic>> members, String? uid, [List<String> ids = const []]) {
+  if (uid != null && uid == FinanceService.uid) return "You".tr;
+  final m = members.where((x) => x['userId'] == uid).firstOrNull;
+  final String name = (m?['displayName'] ?? m?['email'] ?? '').toString().trim();
+  if (name.isNotEmpty) return name;
+  if (uid == null || uid.isEmpty) return '-';
+  final int i = ids.indexOf(uid);
+  return i < 0 ? "Member".tr : '${"Member".tr} ${i + 1}';
 }
 
 /// A name with a status chip (who has paid, member statuses).
@@ -501,7 +580,11 @@ class _Overview extends StatelessWidget {
   final List<Map<String, dynamic>> members;
   final TontineConfig? config;
 
-  const _Overview({required this.tontine, required this.members, required this.config});
+  /// The configuration could not be read (offline...): Retry, not "not available".
+  final bool configFailed;
+  final VoidCallback onRetryConfig;
+
+  const _Overview({required this.tontine, required this.members, required this.config, required this.configFailed, required this.onRetryConfig});
 
   @override
   Widget build(BuildContext context) {
@@ -511,20 +594,32 @@ class _Overview extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (t.isForming) _formingActions(context),
-        if (!t.isForming)
-          StreamBuilder<List<Map<String, dynamic>>>(
-            stream: FinanceGroupService.cycles(t.id),
-            builder: (context, cSnap) {
-              if (!cSnap.hasData && !cSnap.hasError) return FinState.loading(rows: 2);
-              final cycles = cSnap.data ?? const [];
-              final current = cycles.where((c) => c['number'] == t.currentCycle).toList();
-              if (current.isEmpty) return FinNotice("The first cycle starts on the first contribution date.".tr);
-              return _CurrentCycle(tontine: t, cycle: current.first, members: members, config: config);
-            },
+        if (t.isForming) ...[
+          _formingActions(context),
+          if (schedule.isNotEmpty) _schedule(context, schedule, const []),
+        ] else
+          FinReload(
+            builder: (context, retry) => StreamBuilder<List<Map<String, dynamic>>>(
+              stream: FinanceGroupService.cycles(t.id),
+              builder: (context, cSnap) {
+                if (cSnap.hasError) return FinState.error("Could not load the cycles.".tr, onRetry: retry);
+                if (!cSnap.hasData) return FinState.loading(rows: 2);
+                final cycles = cSnap.data!;
+                final current = cycles.where((c) => c['number'] == t.currentCycle).firstOrNull;
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (current == null)
+                      FinNotice("The first cycle starts on the first contribution date.".tr)
+                    else
+                      _CurrentCycle(tontine: t, cycle: current, members: members, config: config),
+                    if (t.isAdmin(uid) && t.isActive) _PendingPayouts(tontine: t, members: members),
+                    if (schedule.isNotEmpty) _schedule(context, schedule, cycles),
+                  ],
+                );
+              },
+            ),
           ),
-        if (t.isAdmin(uid) && t.isActive) _PendingPayouts(tontine: t, members: members),
-        if (schedule.isNotEmpty) _schedule(context, schedule),
         FinSection(
           title: "Details".tr,
           divided: true,
@@ -557,13 +652,19 @@ class _Overview extends StatelessWidget {
     return m.isEmpty ? null : m.first['userId']?.toString();
   }
 
-  /// One cycle per member: where the rotation is, then who receives the pot when.
-  Widget _schedule(BuildContext context, List<DateTime> schedule) {
+  /// One cycle per member: where the rotation is, then who receives the pot
+  /// when, and what became of each cycle the server opened ([cycles]).
+  Widget _schedule(BuildContext context, List<DateTime> schedule, List<Map<String, dynamic>> cycles) {
     final t = tontine;
     final int n = schedule.length;
     final bool started = !t.isForming;
     final int current = t.status == 'completed' ? n - 1 : (t.currentCycle - 1).clamp(0, n - 1).toInt();
-    String beneficiary(int i) => _nameOf(members, _beneficiaryAt(i + 1));
+    String beneficiary(int i) => _nameOf(members, _beneficiaryAt(i + 1), t.memberIds);
+    String? cycleStatus(int i) {
+      final c = cycles.where((c) => c['number'] == i + 1).firstOrNull;
+      return c == null ? null : GroupLabels.cycle(c['status']?.toString()).tr;
+    }
+
     return FinSection(
       title: "Schedule".tr,
       divided: true,
@@ -578,7 +679,7 @@ class _Overview extends StatelessWidget {
               endedLabel: Tontine.statusLabel(t.status).tr,
             ),
           ),
-        for (final (i, d) in schedule.indexed) FinRow('${"Cycle".tr} ${i + 1} · ${_date(d)}', beneficiary(i), strong: t.isActive && i == current),
+        for (final (i, d) in schedule.indexed) FinRow('${"Cycle".tr} ${i + 1} · ${_date(d)}', beneficiary(i), sub: cycleStatus(i), strong: t.isActive && i == current),
       ],
     );
   }
@@ -591,7 +692,7 @@ class _Overview extends StatelessWidget {
           ..sort((a, b) => (a['payoutPosition'] as num).compareTo(b['payoutPosition'] as num)))
         .map((m) => m['userId'].toString())
         .toList();
-    final blocker = cfg == null ? "Tontines are not available yet." : TontineActions.startBlocker(t, uid, cfg, order);
+    final String? blocker = cfg == null ? null : TontineActions.startBlocker(t, uid, cfg, order);
     return FinSection(
       title: "Getting ready".tr,
       top: DsSpace.lg,
@@ -608,13 +709,16 @@ class _Overview extends StatelessWidget {
           trailing: '${t.memberIds.length}/${t.membersLimit}',
         ),
         if (t.isAdmin(uid)) ...[
-          if (blocker != null) FinNotice(blocker.tr, tone: DsTone.warning),
+          if (cfg == null && configFailed)
+            FinNotice("Could not load the tontine settings.".tr, tone: DsTone.danger, actionLabel: "Try again".tr, onAction: onRetryConfig)
+          else if (blocker != null)
+            FinNotice(blocker.tr, tone: DsTone.warning),
           const DsGap(DsSpace.md),
           DsButton.primary(
             label: "Start the tontine".tr,
             icon: Icons.play_arrow_rounded,
             expand: true,
-            onPressed: blocker != null
+            onPressed: cfg == null || blocker != null
                 ? null
                 : () async {
                     final ok = await finConfirm(
@@ -647,103 +751,137 @@ class _CurrentCycle extends StatelessWidget {
 
   const _CurrentCycle({required this.tontine, required this.cycle, required this.members, required this.config});
 
+  /// A payment the user has started and the provider has not confirmed yet:
+  /// `processing`, or `pending` with a payment attached (a pending record
+  /// without one is only a contribution still to pay).
+  static bool _started(Map<String, dynamic> x) {
+    final String status = x['status']?.toString() ?? '';
+    if (status == 'processing') return true;
+    return status == 'pending' && ((x['paymentId'] ?? '').toString().isNotEmpty || (x['reference'] ?? '').toString().isNotEmpty);
+  }
+
+  Future<void> _pay(BuildContext context, String cycleId) {
+    final t = tontine;
+    final int amount = t.contributionAmount;
+    return FinancePaySheet.show(
+      context,
+      title: '${t.name} · ${"Cycle".tr} ${cycle['number']}',
+      amount: amount,
+      currency: t.currency,
+      methods: config?.paymentMethods ?? const ['wallet'],
+      submit: (payment) async {
+        // One key per intended payment, reused on a retry until the server answers.
+        final String intent = FinanceRequestKeys.intentOf('tontine.contribute', '${t.id}/$cycleId', amount, payment);
+        final reply = await FinanceGroupService.contributeToTontine(t.id, cycleId, payment, FinanceRequestKeys.of(intent));
+        FinanceRequestKeys.done(intent);
+        return reply;
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final t = tontine;
     final c = DsColors.of(context);
     final String cycleId = cycle['id'].toString();
     final DateTime? due = FinanceGroupService.toDate(cycle['dueDate']);
-    return StreamBuilder<List<Map<String, dynamic>>>(
-      stream: FinanceGroupService.cycleContributions(t.id, cycleId),
-      builder: (context, snap) {
-        final summary = CycleSummary.of(snap.data ?? const [], t.memberIds, t.contributionAmount, due, DateTime.now());
-        final String mine = summary.statusByMember[FinanceService.uid] ?? 'pending';
-        final double collected = summary.expected == 0 ? 0 : (summary.collected / summary.expected).clamp(0, 1).toDouble();
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            FinSection(
-              title: '${"Cycle".tr} ${cycle['number']}',
-              top: DsSpace.lg,
-              divided: true,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: DsSpace.md),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text("Receives the pot".tr, style: DsTypography.caption.copyWith(color: c.textSecondary)),
-                                const DsGap(DsSpace.xxs),
-                                Text(_nameOf(members, cycle['beneficiaryUserId']?.toString()), style: DsTypography.titleSm.copyWith(color: c.textPrimary)),
-                              ],
-                            ),
-                          ),
-                          const DsGap(DsSpace.sm),
-                          FinStatusChip(status: _st(cycle['status']?.toString()), label: GroupLabels.cycle(cycle['status']?.toString()).tr, icon: true),
-                        ],
-                      ),
-                      const DsGap(DsSpace.lg),
-                      FinProgress(
-                        value: collected,
-                        label: '${"Collected".tr} ${FinanceMoney.format(summary.collected, t.currency)} / ${FinanceMoney.format(summary.expected, t.currency)}',
-                      ),
-                      const DsGap(DsSpace.xs),
-                      Text(
-                        '${summary.paid} ${"paid".tr} · ${summary.pending} ${"pending".tr} · ${summary.overdue} ${"overdue".tr}',
-                        style: DsTypography.caption.copyWith(color: c.textSecondary),
-                      ),
-                    ],
-                  ),
-                ),
-                FinRow("Due date".tr, _date(due)),
-                if (mine != 'paid' && cycle['status'] == 'collecting')
+    final String me = FinanceService.uid;
+    return FinReload(
+      builder: (context, retry) => StreamBuilder<List<Map<String, dynamic>>>(
+        stream: FinanceGroupService.cycleContributions(t.id, cycleId),
+        builder: (context, snap) {
+          if (snap.hasError) return FinState.error("Could not load the contributions of this cycle.".tr, onRetry: retry);
+          // Nobody's status (the user's included) is known until the contributions are read.
+          if (!snap.hasData) return FinState.loading(rows: 3);
+          final contributions = snap.data!;
+          final summary = CycleSummary.of(contributions, t.memberIds, t.contributionAmount, due, DateTime.now());
+          final String mine = summary.statusByMember[me] ?? 'pending';
+          final bool inProgress = mine != 'paid' && contributions.any((x) => x['userId'] == me && _started(x));
+          final bool canPay = cycle['status'] == 'collecting' && t.memberIds.contains(me) && mine != 'paid';
+          final int processing = summary.statusByMember.values.where((s) => s == 'processing').length;
+          final double collected = summary.expected == 0 ? 0 : (summary.collected / summary.expected).clamp(0, 1).toDouble();
+          final counts = [
+            "@paid of @total members have paid".trParams({'paid': '${summary.paid}', 'total': '${t.memberIds.length}'}),
+            if (processing > 0) "Being confirmed: @n".trParams({'n': '$processing'}),
+            if (summary.pending > 0) "Not paid yet: @n".trParams({'n': '${summary.pending}'}),
+            if (summary.overdue > 0) "Overdue: @n".trParams({'n': '${summary.overdue}'}),
+          ];
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              FinSection(
+                title: '${"Cycle".tr} ${cycle['number']}',
+                top: DsSpace.lg,
+                divided: true,
+                children: [
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: DsSpace.md),
-                    child: FinanceKycGate(
-                      builder: (context, verified) => DsButton.primary(
-                        label: "${"Pay my contribution".tr} ${FinanceMoney.format(t.contributionAmount, t.currency)}",
-                        icon: Icons.payments_outlined,
-                        expand: true,
-                        onPressed: !verified
-                            ? null
-                            : () {
-                                final key = FinanceGroupService.newRequestKey();
-                                FinancePaySheet.show(
-                                  context,
-                                  title: '${t.name} · ${"Cycle".tr} ${cycle['number']}',
-                                  amount: t.contributionAmount,
-                                  currency: t.currency,
-                                  methods: config?.paymentMethods ?? const ['wallet'],
-                                  submit: (payment) => FinanceGroupService.contributeToTontine(t.id, cycleId, payment, key),
-                                );
-                              },
-                      ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text("Receives the pot".tr, style: DsTypography.caption.copyWith(color: c.textSecondary)),
+                                  const DsGap(DsSpace.xxs),
+                                  Text(_nameOf(members, cycle['beneficiaryUserId']?.toString(), t.memberIds), style: DsTypography.titleSm.copyWith(color: c.textPrimary)),
+                                ],
+                              ),
+                            ),
+                            const DsGap(DsSpace.sm),
+                            FinStatusChip(status: _st(cycle['status']?.toString()), label: GroupLabels.cycle(cycle['status']?.toString()).tr, icon: true),
+                          ],
+                        ),
+                        const DsGap(DsSpace.lg),
+                        FinProgress(
+                          value: collected,
+                          label: '${"Collected".tr} ${FinanceMoney.format(summary.collected, t.currency)} / ${FinanceMoney.format(summary.expected, t.currency)}',
+                        ),
+                        const DsGap(DsSpace.xs),
+                        Text(counts.join(' · '), style: DsTypography.caption.copyWith(color: c.textSecondary)),
+                      ],
                     ),
                   ),
-              ],
-            ),
-            FinSection(
-              title: "Contributions".tr,
-              divided: true,
-              children: [
-                for (final uid in t.memberIds)
-                  _StatusLine(
-                    label: _nameOf(members, uid),
-                    status: _st(summary.statusByMember[uid]),
-                    statusLabel: GroupLabels.contribution(summary.statusByMember[uid]).tr,
-                  ),
-              ],
-            ),
-          ],
-        );
-      },
+                  FinRow("Due date".tr, _date(due)),
+                  if (canPay && inProgress)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: DsSpace.md),
+                      child: FinNotice("Your payment is being confirmed. This page updates as soon as it is.".tr, title: "Payment in progress".tr),
+                    )
+                  else if (canPay)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: DsSpace.md),
+                      child: FinanceKycGate(
+                        builder: (context, verified) => DsButton.primary(
+                          label: "${"Pay my contribution".tr} ${FinanceMoney.format(t.contributionAmount, t.currency)}",
+                          icon: Icons.payments_outlined,
+                          expand: true,
+                          onPressed: !verified ? null : () => _pay(context, cycleId),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              FinSection(
+                title: "Contributions".tr,
+                divided: true,
+                children: [
+                  for (final uid in t.memberIds)
+                    _StatusLine(
+                      label: _nameOf(members, uid, t.memberIds),
+                      status: _st(summary.statusByMember[uid]),
+                      statusLabel: GroupLabels.contribution(summary.statusByMember[uid]).tr,
+                    ),
+                ],
+              ),
+            ],
+          );
+        },
+      ),
     );
   }
 }
@@ -772,7 +910,7 @@ class _PendingPayouts extends StatelessWidget {
   }
 
   Widget _approval(BuildContext context, Map<String, dynamic> p) {
-    final String name = _nameOf(members, p['beneficiaryUserId']?.toString());
+    final String name = _nameOf(members, p['beneficiaryUserId']?.toString(), tontine.memberIds);
     final String amount = FinanceMoney.format(FinanceSummary.intOf(p['amount']), tontine.currency);
     final String cycle = '${p['cycleNumber'] ?? '-'}';
     return Column(
@@ -813,33 +951,35 @@ class _PendingPayouts extends StatelessWidget {
   }
 }
 
-class _Members extends StatefulWidget {
+/// Members and payout order. While the tontine is forming its admin drags
+/// members (by the handle, or a long press on the row) into the payout
+/// order; the unsaved order lives in [TontineScreen] so it survives a tab
+/// switch.
+class _Members extends StatelessWidget {
   final Tontine tontine;
   final List<Map<String, dynamic>> members;
-  final TontineConfig? config;
+  final List<String>? order;
+  final ValueChanged<List<String>?> onOrderChanged;
 
-  const _Members({required this.tontine, required this.members, required this.config});
-
-  @override
-  State<_Members> createState() => _MembersState();
-}
-
-class _MembersState extends State<_Members> {
-  List<String>? _order;
+  const _Members({required this.tontine, required this.members, required this.order, required this.onOrderChanged});
 
   @override
   Widget build(BuildContext context) {
     final c = DsColors.of(context);
-    final t = widget.tontine;
+    final t = tontine;
     final uid = FinanceService.uid;
-    final active = widget.members.where((m) => m['status'] == 'active').toList();
-    final others = widget.members.where((m) => m['status'] != 'active').toList();
+    final active = members.where((m) => m['status'] == 'active').toList();
+    final others = members.where((m) => m['status'] != 'active').toList();
     final bool editOrder = t.isAdmin(uid) && t.isForming && t.payoutOrderMethod == 'fixed';
-    final order = _order ?? active.map((m) => m['userId'].toString()).toList();
+    final saved = active.map((m) => m['userId'].toString()).toList();
+    // A draft made before someone joined or left no longer matches: start again from the saved order.
+    final draft = order;
+    final bool draftValid = draft != null && draft.length == saved.length && saved.every(draft.contains);
+    final current = draftValid ? draft : saved;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (TontineActions.canInvite(t, uid, widget.members.where((m) => m['status'] == 'active' || m['status'] == 'invited').length))
+        if (TontineActions.canInvite(t, uid, members.where((m) => m['status'] == 'active' || m['status'] == 'invited').length))
           Padding(
             padding: const EdgeInsets.only(top: DsSpace.lg),
             child: DsButton.secondary(
@@ -858,31 +998,45 @@ class _MembersState extends State<_Members> {
           divided: !editOrder,
           children: [
             if (editOrder)
-              ReorderableListView(
-                shrinkWrap: true,
-                padding: EdgeInsets.zero,
-                physics: const NeverScrollableScrollPhysics(),
-                onReorder: (from, to) => setState(() {
-                  final list = [...order];
-                  final item = list.removeAt(from);
-                  list.insert(to > from ? to - 1 : to, item);
-                  _order = list;
-                }),
-                children: [
-                  for (final (i, id) in order.indexed)
-                    Padding(
-                      key: ValueKey(id),
-                      padding: const EdgeInsets.symmetric(vertical: DsSpace.md),
-                      child: Row(
-                        children: [
-                          _Position(i + 1),
-                          const DsGap(DsSpace.md),
-                          Expanded(child: Text(_nameOf(widget.members, id), style: DsTypography.bodyStrong.copyWith(color: c.textPrimary))),
-                          Icon(Icons.drag_handle_rounded, color: c.textMuted),
-                        ],
+              // Scrolls by itself (and while dragging) when the members do not fit.
+              ConstrainedBox(
+                constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.6),
+                child: ReorderableListView(
+                  primary: false,
+                  shrinkWrap: true,
+                  padding: EdgeInsets.zero,
+                  buildDefaultDragHandles: false,
+                  onReorderItem: (from, to) {
+                    final list = [...current];
+                    list.insert(to, list.removeAt(from));
+                    onOrderChanged(list);
+                  },
+                  children: [
+                    for (final (i, id) in current.indexed)
+                      ReorderableDelayedDragStartListener(
+                        key: ValueKey(id),
+                        index: i,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: DsSpace.xs),
+                          child: Row(
+                            children: [
+                              _Position(i + 1),
+                              const DsGap(DsSpace.md),
+                              Expanded(child: Text(_nameOf(members, id, t.memberIds), style: DsTypography.bodyStrong.copyWith(color: c.textPrimary))),
+                              ReorderableDragStartListener(
+                                index: i,
+                                child: SizedBox(
+                                  width: 48,
+                                  height: 48,
+                                  child: Icon(Icons.drag_handle_rounded, color: c.textMuted, semanticLabel: "Drag to change the order".tr),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
-                    ),
-                ],
+                  ],
+                ),
               )
             else
               for (final m in active)
@@ -897,7 +1051,7 @@ class _MembersState extends State<_Members> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(_nameOf(widget.members, m['userId']?.toString()), style: DsTypography.bodyStrong.copyWith(color: c.textPrimary)),
+                              Text(_nameOf(members, m['userId']?.toString(), t.memberIds), style: DsTypography.bodyStrong.copyWith(color: c.textPrimary)),
                               if (m['role'] == 'admin') Text("Administrator".tr, style: DsTypography.caption.copyWith(color: c.textSecondary)),
                             ],
                           ),
@@ -906,15 +1060,21 @@ class _MembersState extends State<_Members> {
                     ),
                   ),
                 ),
-            if (editOrder && _order != null)
+            if (editOrder && draftValid)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: DsSpace.md),
-                child: DsButton.primary(
-                  label: "Save payout order".tr,
-                  expand: true,
-                  onPressed: () async {
-                    if (await FinanceUi.run(() => FinanceGroupService.setPayoutOrder(t.id, _order!), success: "Payout order saved")) setState(() => _order = null);
-                  },
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    DsButton.primary(
+                      label: "Save payout order".tr,
+                      expand: true,
+                      onPressed: () async {
+                        if (await FinanceUi.run(() => FinanceGroupService.setPayoutOrder(t.id, current), success: "Payout order saved")) onOrderChanged(null);
+                      },
+                    ),
+                    DsButton.ghost(label: "Discard changes".tr, expand: true, onPressed: () => onOrderChanged(null)),
+                  ],
                 ),
               ),
           ],
@@ -927,7 +1087,7 @@ class _MembersState extends State<_Members> {
               for (final m in others)
                 FinListTile(
                   icon: Icons.person_outline_rounded,
-                  title: m['displayName']?.toString() ?? m['email']?.toString() ?? '-',
+                  title: m['displayName']?.toString() ?? m['email']?.toString() ?? "Member".tr,
                   status: _st(m['status']?.toString()),
                   statusLabel: GroupLabels.member(m['status']?.toString()).tr,
                 ),
@@ -949,55 +1109,62 @@ class _History extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        StreamBuilder<List<Map<String, dynamic>>>(
-          stream: FinanceGroupService.cycles(tontine.id),
-          builder: (context, snap) {
-            if (!snap.hasData && !snap.hasError) return FinState.loading(rows: 2);
-            final cycles = snap.data ?? const <Map<String, dynamic>>[];
-            return FinSection(
-              title: "Cycles".tr,
-              top: DsSpace.lg,
-              divided: true,
-              children: [
-                if (cycles.isEmpty) _quiet(context, "No cycle yet.".tr),
-                for (final cy in cycles)
-                  FinListTile(
-                    icon: Icons.autorenew_rounded,
-                    iconTone: tontine.isActive && cy['number'] == tontine.currentCycle ? DsTone.brand : DsTone.neutral,
-                    title: '${"Cycle".tr} ${cy['number']}',
-                    subtitle: '${_date(FinanceGroupService.toDate(cy['dueDate']))} · ${"Receives the pot".tr}: ${_nameOf(members, cy['beneficiaryUserId']?.toString())}',
-                    status: _st(cy['status']?.toString()),
-                    statusLabel: GroupLabels.cycle(cy['status']?.toString()).tr,
-                  ),
-              ],
-            );
-          },
+        FinReload(
+          builder: (context, retry) => StreamBuilder<List<Map<String, dynamic>>>(
+            stream: FinanceGroupService.cycles(tontine.id),
+            builder: (context, snap) {
+              if (snap.hasError) return FinState.error("Could not load the cycles.".tr, onRetry: retry);
+              if (!snap.hasData) return FinState.loading(rows: 2);
+              final cycles = snap.data!;
+              return FinSection(
+                title: "Cycles".tr,
+                top: DsSpace.lg,
+                divided: true,
+                children: [
+                  if (cycles.isEmpty) _quiet(context, "No cycle yet.".tr),
+                  for (final cy in cycles)
+                    FinListTile(
+                      icon: Icons.autorenew_rounded,
+                      iconTone: tontine.isActive && cy['number'] == tontine.currentCycle ? DsTone.brand : DsTone.neutral,
+                      title: '${"Cycle".tr} ${cy['number']}',
+                      subtitle:
+                          '${_date(FinanceGroupService.toDate(cy['dueDate']))} · ${"Receives the pot".tr}: ${_nameOf(members, cy['beneficiaryUserId']?.toString(), tontine.memberIds)}',
+                      status: _st(cy['status']?.toString()),
+                      statusLabel: GroupLabels.cycle(cy['status']?.toString()).tr,
+                    ),
+                ],
+              );
+            },
+          ),
         ),
-        StreamBuilder<List<Map<String, dynamic>>>(
-          stream: FinanceGroupService.payouts(tontine.id),
-          builder: (context, snap) {
-            if (!snap.hasData && !snap.hasError) return FinState.loading(rows: 2);
-            final payouts = snap.data ?? const <Map<String, dynamic>>[];
-            return FinSection(
-              title: "Payouts".tr,
-              divided: true,
-              children: [
-                if (payouts.isEmpty) _quiet(context, "No payout yet.".tr),
-                for (final p in payouts)
-                  FinListTile(
-                    icon: Icons.north_east_rounded,
-                    title: _nameOf(members, p['beneficiaryUserId']?.toString()),
-                    subtitle: [
-                      '${"Cycle".tr} ${p['cycleNumber'] ?? '-'}',
-                      if ((p['reference'] ?? '').toString().isNotEmpty) ltrRef(p['reference']),
-                    ].join(' · '),
-                    amount: FinanceMoney.format(FinanceSummary.intOf(p['amount']), tontine.currency),
-                    status: _st(p['status']?.toString()),
-                    statusLabel: GroupLabels.payout(p['status']?.toString()).tr,
-                  ),
-              ],
-            );
-          },
+        FinReload(
+          builder: (context, retry) => StreamBuilder<List<Map<String, dynamic>>>(
+            stream: FinanceGroupService.payouts(tontine.id),
+            builder: (context, snap) {
+              if (snap.hasError) return FinState.error("Could not load the payouts.".tr, onRetry: retry);
+              if (!snap.hasData) return FinState.loading(rows: 2);
+              final payouts = snap.data!;
+              return FinSection(
+                title: "Payouts".tr,
+                divided: true,
+                children: [
+                  if (payouts.isEmpty) _quiet(context, "No payout yet.".tr),
+                  for (final p in payouts)
+                    FinListTile(
+                      icon: Icons.north_east_rounded,
+                      title: _nameOf(members, p['beneficiaryUserId']?.toString(), tontine.memberIds),
+                      subtitle: [
+                        '${"Cycle".tr} ${p['cycleNumber'] ?? '-'}',
+                        if ((p['reference'] ?? '').toString().isNotEmpty) ltrRef(p['reference']),
+                      ].join(' · '),
+                      amount: FinanceMoney.format(FinanceSummary.intOf(p['amount']), tontine.currency),
+                      status: _st(p['status']?.toString()),
+                      statusLabel: GroupLabels.payout(p['status']?.toString()).tr,
+                    ),
+                ],
+              );
+            },
+          ),
         ),
       ],
     );
@@ -1010,47 +1177,6 @@ class _Disputes extends StatelessWidget {
 
   const _Disputes({required this.tontine, required this.members});
 
-  Future<void> _raise(BuildContext context) async {
-    final subject = TextEditingController();
-    final description = TextEditingController();
-    String? against;
-    final ok = await finSheet<bool>(
-      title: "Raise a dispute".tr,
-      child: StatefulBuilder(
-        builder: (context, setState) => Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            DsTextField(label: "Subject".tr, controller: subject, requiredMark: true, onChanged: (_) => setState(() {})),
-            DsTextField(label: "What happened".tr, controller: description, requiredMark: true, maxLines: 4, onChanged: (_) => setState(() {})),
-            DsDropdown<String?>(
-              label: "Concerning a member (optional)".tr,
-              value: against,
-              items: [
-                DropdownMenuItem(value: null, child: Text("The tontine in general".tr)),
-                for (final id in tontine.memberIds.where((id) => id != FinanceService.uid)) DropdownMenuItem(value: id, child: Text(_nameOf(members, id))),
-              ],
-              onChanged: (v) => setState(() => against = v),
-            ),
-            Text(
-              "Disputes are reviewed by the administrators; nobody is restricted without a review.".tr,
-              style: DsTypography.caption.copyWith(color: DsColors.of(context).textSecondary),
-            ),
-            const DsGap(DsSpace.md),
-            DsButton.primary(
-              label: "Send".tr,
-              expand: true,
-              onPressed: subject.text.trim().length < 3 || description.text.trim().length < 10 ? null : () => Get.back(result: true),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (ok == true) {
-      await FinanceUi.run(() => FinanceGroupService.raiseDispute(tontine.id, subject: subject.text.trim(), description: description.text.trim(), againstUserId: against), success: "Dispute sent");
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -1058,20 +1184,28 @@ class _Disputes extends StatelessWidget {
       children: [
         Padding(
           padding: const EdgeInsets.only(top: DsSpace.lg),
-          child: DsButton.secondary(label: "Raise a dispute".tr, icon: Icons.report_outlined, expand: true, onPressed: () => _raise(context)),
+          child: DsButton.secondary(
+            label: "Raise a dispute".tr,
+            icon: Icons.report_outlined,
+            expand: true,
+            onPressed: () => finSheet<void>(title: "Raise a dispute".tr, child: _DisputeSheet(tontine: tontine, members: members)),
+          ),
         ),
-        StreamBuilder<List<Map<String, dynamic>>>(
-          stream: FinanceGroupService.disputes(tontine.id),
-          builder: (context, snap) {
-            if (!snap.hasData && !snap.hasError) return FinState.loading(rows: 2);
-            final list = snap.data ?? const [];
-            if (list.isEmpty) return FinState.empty(Icons.verified_outlined, "No dispute.".tr);
-            return FinSection(
-              title: "Disputes".tr,
-              divided: true,
-              children: [for (final d in list) _dispute(context, d)],
-            );
-          },
+        FinReload(
+          builder: (context, retry) => StreamBuilder<List<Map<String, dynamic>>>(
+            stream: FinanceGroupService.disputes(tontine.id),
+            builder: (context, snap) {
+              if (snap.hasError) return FinState.error("Could not load the disputes.".tr, onRetry: retry);
+              if (!snap.hasData) return FinState.loading(rows: 2);
+              final list = snap.data!;
+              if (list.isEmpty) return FinState.empty(Icons.verified_outlined, "No dispute.".tr);
+              return FinSection(
+                title: "Disputes".tr,
+                divided: true,
+                children: [for (final d in list) _dispute(context, d)],
+              );
+            },
+          ),
         ),
       ],
     );
@@ -1094,12 +1228,95 @@ class _Disputes extends StatelessWidget {
             ],
           ),
           const DsGap(DsSpace.xxs),
-          Text('${"Raised by".tr} ${_nameOf(members, d['raisedBy']?.toString())} · ${FinanceUi.date(d['createdAt'])}', style: DsTypography.caption.copyWith(color: c.textSecondary)),
+          Text('${"Raised by".tr} ${_nameOf(members, d['raisedBy']?.toString(), tontine.memberIds)} · ${FinanceUi.date(d['createdAt'])}',
+              style: DsTypography.caption.copyWith(color: c.textSecondary)),
           const DsGap(DsSpace.sm),
           Text(d['description']?.toString() ?? '', style: DsTypography.body.copyWith(color: c.textPrimary)),
           if ((d['resolution'] ?? '').toString().isNotEmpty) FinNotice(d['resolution'].toString(), title: "Resolution".tr, tone: DsTone.info),
         ],
       ),
+    );
+  }
+}
+
+/// A dispute: subject, what happened, and optionally the member concerned
+/// (searchable in a large tontine). It is sent from the sheet, which stays
+/// open with what was typed if the request fails.
+class _DisputeSheet extends StatefulWidget {
+  final Tontine tontine;
+  final List<Map<String, dynamic>> members;
+
+  const _DisputeSheet({required this.tontine, required this.members});
+
+  @override
+  State<_DisputeSheet> createState() => _DisputeSheetState();
+}
+
+class _DisputeSheetState extends State<_DisputeSheet> {
+  static const int _subjectMin = 3;
+  static const int _descriptionMin = 10;
+
+  final _subject = TextEditingController();
+  final _description = TextEditingController();
+
+  /// The member concerned; empty for the tontine in general.
+  String _against = '';
+
+  @override
+  void dispose() {
+    _subject.dispose();
+    _description.dispose();
+    super.dispose();
+  }
+
+  Future<void> _send() async {
+    final t = widget.tontine;
+    final ok = await FinanceUi.run(
+      () => FinanceGroupService.raiseDispute(t.id, subject: _subject.text.trim(), description: _description.text.trim(), againstUserId: _against.isEmpty ? null : _against),
+      success: "Dispute sent",
+    );
+    if (ok && mounted) Navigator.of(context).pop();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = widget.tontine;
+    final bool ready = _subject.text.trim().length >= _subjectMin && _description.text.trim().length >= _descriptionMin;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        DsTextField(
+          label: "Subject".tr,
+          controller: _subject,
+          requiredMark: true,
+          helper: _minHelper(_subject.text, _subjectMin),
+          onChanged: (_) => setState(() {}),
+        ),
+        DsTextField(
+          label: "What happened".tr,
+          controller: _description,
+          requiredMark: true,
+          maxLines: 4,
+          helper: _minHelper(_description.text, _descriptionMin),
+          onChanged: (_) => setState(() {}),
+        ),
+        FinPickerField<String>(
+          label: "Concerning a member (optional)".tr,
+          value: _against,
+          options: [
+            ('', "The tontine in general".tr),
+            for (final id in t.memberIds.where((id) => id != FinanceService.uid)) (id, _nameOf(widget.members, id, t.memberIds)),
+          ],
+          onChanged: (v) => setState(() => _against = v),
+        ),
+        Text(
+          "Disputes are reviewed by the administrators; nobody is restricted without a review.".tr,
+          style: DsTypography.caption.copyWith(color: DsColors.of(context).textSecondary),
+        ),
+        const DsGap(DsSpace.md),
+        DsButton.primary(label: "Send".tr, expand: true, onPressed: ready ? _send : null),
+      ],
     );
   }
 }

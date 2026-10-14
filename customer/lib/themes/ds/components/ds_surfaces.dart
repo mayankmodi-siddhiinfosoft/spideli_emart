@@ -441,7 +441,8 @@ class DsListTile extends StatelessWidget {
             ],
             if (showChevron) ...[
               const DsGap(DsSpace.xs),
-              Icon(Directionality.of(context) == TextDirection.rtl ? Icons.chevron_left_rounded : Icons.chevron_right_rounded, color: c.textMuted),
+              // chevron_right mirrors itself in right-to-left text.
+              Icon(Icons.chevron_right_rounded, color: c.textMuted),
             ],
           ],
         ),

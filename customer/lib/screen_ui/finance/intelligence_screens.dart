@@ -6,14 +6,14 @@ import 'package:customer/screen_ui/finance/finance_widgets.dart';
 import 'package:customer/screen_ui/finance/finance_ui.dart';
 import 'package:customer/service/finance_intel_service.dart';
 import 'package:customer/themes/ds/ds.dart';
-import 'package:customer/themes/show_toast_dialog.dart';
 import 'package:customer/utils/finance_financing_rules.dart';
 import 'package:customer/utils/finance_intel_rules.dart';
 import 'package:customer/utils/finance_investment_rules.dart';
 import 'package:customer/utils/finance_rules.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show FilteringTextInputFormatter;
 import 'package:get/get.dart';
-import 'package:intl/intl.dart';
+import 'package:intl/intl.dart' show DateFormat;
 
 String _date(DateTime? d) => d == null ? '-' : ltr(DateFormat('dd MMM yyyy').format(d));
 
@@ -43,26 +43,57 @@ IconData _trend(Indicator i) => switch (i.direction) {
       _ => Icons.insights_outlined,
     };
 
+/// The change since the previous value in words, in the indicator's unit
+/// ("Up 0.3 %"), so the arrow is never the only cue. Null without a previous value.
+String? _trendText(Indicator i) {
+  final double? change = i.change;
+  if (change == null) return null;
+  final String amount = ltr('${formatNumber(change.abs())}${i.unit == '%' ? ' %' : (i.unit.isEmpty ? '' : ' ${i.unit}')}');
+  return switch (i.direction) {
+    'up' => '${"Up".tr} $amount',
+    'down' => '${"Down".tr} $amount',
+    _ => "Unchanged".tr,
+  };
+}
+
 /// The previous value of an indicator, in its unit.
 String _previous(Indicator i) => ltr('${formatNumber(i.previousValue!)}${i.unit == '%' ? ' %' : (i.unit.isEmpty ? '' : ' ${i.unit}')}');
 
 String _kind(FxRate r) => (r.kind == 'official' ? "Official" : "Indicative").tr;
 
-/// A history chart with its first and last points, read out for screen readers.
-Widget _history(BuildContext context, List<double> values, String first, String last, String firstValue, String lastValue) => FinSection(
-      title: "History".tr,
-      children: [
-        const DsGap(DsSpace.sm),
-        Semantics(
-          container: true,
-          label: '${"History".tr}: $first $firstValue – $last $lastValue',
-          child: ExcludeSemantics(child: FinanceLineChart(values: values)),
-        ),
-        const DsGap(DsSpace.xs),
-        Row(children: [Expanded(child: _caption(context, first)), _caption(context, last)]),
-        const DsGap(DsSpace.sm),
-      ],
-    );
+/// A history chart with its first and last points, read out for screen
+/// readers, and its highest and lowest values ([format] writes a value).
+Widget _history(BuildContext context, List<double> values, String first, String last, String Function(double) format) {
+  final String high = format(values.reduce(math.max));
+  final String low = format(values.reduce(math.min));
+  return FinSection(
+    title: "History".tr,
+    children: [
+      const DsGap(DsSpace.sm),
+      Semantics(
+        container: true,
+        label: '${"History".tr}: $first ${format(values.first)} – $last ${format(values.last)}. ${"High".tr} $high, ${"Low".tr} $low',
+        child: ExcludeSemantics(child: FinanceLineChart(values: values)),
+      ),
+      const DsGap(DsSpace.xs),
+      ExcludeSemantics(
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          // Under the line, which runs left to right in every language.
+          Directionality(
+            textDirection: TextDirection.ltr,
+            child: Row(children: [Expanded(child: _caption(context, first)), _caption(context, last)]),
+          ),
+          const DsGap(DsSpace.sm),
+          Row(children: [
+            Expanded(child: _caption(context, '${"High".tr} $high')),
+            _caption(context, '${"Low".tr} $low'),
+          ]),
+        ]),
+      ),
+      const DsGap(DsSpace.sm),
+    ],
+  );
+}
 
 abstract final class IntelLabels {
   static String country(String c) => const {
@@ -116,14 +147,13 @@ class IntelligenceScreen extends StatefulWidget {
 
 class _IntelligenceScreenState extends State<IntelligenceScreen> {
   int _tab = 0;
-  final Future<IntelligenceConfig?> _config = FinanceIntelService.config();
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<IntelligenceConfig?>(
-      future: _config,
-      builder: (context, cfgSnap) {
-        final cfg = cfgSnap.data;
+    return FinConfig<IntelligenceConfig>(
+      load: FinanceIntelService.config,
+      builder: (context, st) {
+        final cfg = st.config;
         final IntelligenceView view = widget.view;
         final bool markets = view != IntelligenceView.funding, funding = view != IntelligenceView.markets;
         final tabs = <(String, Widget Function())>[
@@ -137,15 +167,22 @@ class _IntelligenceScreenState extends State<IntelligenceScreen> {
           IntelligenceView.funding => "Invest in projects",
         };
         final int tab = tabs.isEmpty ? 0 : math.min(_tab, tabs.length - 1);
+        final IconData icon = view == IntelligenceView.funding ? Icons.lightbulb_outline_rounded : Icons.insights_outlined;
+        final String unavailable = (view == IntelligenceView.funding
+                ? "No project is open to investors yet."
+                : view == IntelligenceView.markets
+                    ? "Market information is not available yet."
+                    : "Economic intelligence is not available yet.")
+            .tr;
+        // Loading, unreadable (with Retry), or not offered by the admin.
+        final Widget? waiting = st.placeholder(icon, unavailable);
         return FinScaffold(
           title: title.tr,
           body: FinBody(children: [
-            if (cfgSnap.connectionState == ConnectionState.waiting)
-              FinState.loading()
+            if (waiting != null)
+              waiting
             else if (tabs.isEmpty)
-              FinState.empty(
-                  view == IntelligenceView.funding ? Icons.lightbulb_outline_rounded : Icons.insights_outlined,
-                  (view == IntelligenceView.funding ? "No project is open to investors yet." : view == IntelligenceView.markets ? "Market information is not available yet." : "Economic intelligence is not available yet.").tr)
+              FinState.empty(icon, unavailable)
             else ...[
               if (tabs.length > 1) DsSegmentedTabs(segments: [for (final t in tabs) DsSegment(t.$1.tr)], index: tab, onChanged: (i) => setState(() => _tab = i)),
               tabs[tab].$2(),
@@ -195,7 +232,8 @@ class _IndicatorsState extends State<_Indicators> {
           key: ValueKey(_country),
           stream: FinanceIntelService.indicators(_country),
           builder: (context, snap) {
-            if (snap.hasError) return FinState.error("Could not load the indicators.".tr);
+            // Retry builds again, which subscribes again.
+            if (snap.hasError) return FinState.error("Could not load the indicators.".tr, onRetry: () => setState(() {}));
             if (!snap.hasData) return FinState.loading(rows: 4);
             if (snap.data!.isEmpty) return FinState.empty(Icons.insights_outlined, "No indicator is published for this country yet.".tr);
             return FinSection(
@@ -234,7 +272,7 @@ class _IndicatorRow extends StatelessWidget {
             FinListTile(
               icon: _trend(i),
               title: i.name,
-              subtitle: [ltr(i.period), if (i.previousValue != null) '${"Previous".tr}: ${_previous(i)}'].join(' · '),
+              subtitle: [ltr(i.period), ?_trendText(i), if (i.previousValue != null) '${"Previous".tr}: ${_previous(i)}'].join(' · '),
               amount: ltr(i.display),
               chevron: true,
             ),
@@ -258,22 +296,28 @@ class IndicatorScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final i = indicator;
+    final Uri? source = i.sourceUrl.isEmpty ? null : Uri.tryParse(i.sourceUrl);
     return FinScaffold(
       title: i.name,
       body: FinBody(children: [
         FinHeader(
           overline: '${IntelLabels.country(i.country).tr} · ${ltr(i.period)}',
           title: ltr(i.display),
-          subtitle: i.previousValue == null ? null : '${"Previous".tr}: ${_previous(i)}',
+          subtitle: i.previousValue == null ? null : '${_trendText(i)} · ${"Previous".tr}: ${_previous(i)}',
           icon: _trend(i),
         ),
-        StreamBuilder<List<(String, double)>>(
-          stream: FinanceIntelService.indicatorHistory(i.id),
-          builder: (context, snap) {
-            final h = snap.data ?? const <(String, double)>[];
-            if (h.length < 2) return const SizedBox.shrink();
-            return _history(context, [for (final p in h) p.$2], ltr(h.first.$1), ltr(h.last.$1), ltr(formatNumber(h.first.$2)), ltr(formatNumber(h.last.$2)));
-          },
+        // Retry subscribes again: a failed stream does not recover by itself.
+        StatefulBuilder(
+          builder: (context, refresh) => StreamBuilder<List<(String, double)>>(
+            stream: FinanceIntelService.indicatorHistory(i.id),
+            builder: (context, snap) {
+              if (snap.hasError) return FinState.error("Could not load the history.".tr, onRetry: () => refresh(() {}));
+              if (!snap.hasData) return FinState.loading(rows: 2);
+              final h = snap.data!;
+              if (h.length < 2) return const SizedBox.shrink();
+              return _history(context, [for (final p in h) p.$2], ltr(h.first.$1), ltr(h.last.$1), (v) => ltr(formatNumber(v)));
+            },
+          ),
         ),
         FinSection(
           title: "Source".tr,
@@ -281,10 +325,10 @@ class IndicatorScreen extends StatelessWidget {
             FinRow("Published by".tr, i.source),
             FinRow("Period".tr, ltr(i.period)),
             FinRow("Updated".tr, _dateTime(i.updatedAt)),
-            if (i.sourceUrl.isNotEmpty)
+            if (source != null)
               Align(
                 alignment: AlignmentDirectional.centerStart,
-                child: DsButton.ghost(label: "Open the source".tr, icon: Icons.open_in_new_rounded, onPressed: () => Constant().launchURL(Uri.parse(i.sourceUrl))),
+                child: DsButton.ghost(label: "Open the source".tr, icon: Icons.open_in_new_rounded, onPressed: () => Constant().launchURL(source)),
               ),
           ],
         ),
@@ -309,6 +353,9 @@ class _RatesState extends State<_Rates> {
   late String _from = widget.config.quotes.first;
   late String _to = widget.config.base;
 
+  /// Held here: the converter rebuilds at every typed digit.
+  late Stream<List<FxRate>> _rates = FinanceIntelService.rates(widget.config.base);
+
   @override
   void dispose() {
     _amount.dispose();
@@ -323,9 +370,9 @@ class _RatesState extends State<_Rates> {
     final cfg = widget.config;
     final all = [cfg.base, ...cfg.quotes];
     return StreamBuilder<List<FxRate>>(
-      stream: FinanceIntelService.rates(cfg.base),
+      stream: _rates,
       builder: (context, snap) {
-        if (snap.hasError) return FinState.error("Could not load the exchange rates.".tr);
+        if (snap.hasError) return FinState.error("Could not load the exchange rates.".tr, onRetry: () => setState(() => _rates = FinanceIntelService.rates(cfg.base)));
         if (!snap.hasData) return FinState.loading(rows: 4);
         final latest = FxConverter.latest(snap.data!, cfg.base);
         final double? amount = double.tryParse(_amount.text.replaceAll(',', '.').replaceAll(' ', ''));
@@ -338,43 +385,52 @@ class _RatesState extends State<_Rates> {
               padding: _formPadding,
               footnote: "Indicative rates for information. The rate applied to a payment or transfer is the one shown when you confirm it.".tr,
               children: [
+                // The amount with its currency, digits only.
                 DsTextField(
                   label: "Amount".tr,
                   controller: _amount,
                   keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,\s]'))],
+                  suffix: Padding(
+                    padding: const EdgeInsetsDirectional.only(end: DsSpace.xs),
+                    child: Text(_from, style: DsTypography.bodyStrong.copyWith(color: c.textSecondary)),
+                  ),
                   onChanged: (_) => setState(() {}),
                 ),
-                Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                  Expanded(
-                    child: DsDropdown<String>(
-                      label: "From".tr,
-                      value: _from,
-                      items: [for (final cur in all) DropdownMenuItem(value: cur, child: Text(cur))],
-                      onChanged: (v) => setState(() => _from = v ?? _from),
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(DsSpace.xs, 0, DsSpace.xs, DsSpace.lg),
-                    child: DsIconButton(
-                      icon: Icons.swap_horiz_rounded,
-                      semanticLabel: "Swap".tr,
-                      variant: DsIconButtonVariant.outlined,
-                      onPressed: () => setState(() {
-                        final f = _from;
-                        _from = _to;
-                        _to = f;
-                      }),
-                    ),
-                  ),
-                  Expanded(
-                    child: DsDropdown<String>(
-                      label: "To".tr,
-                      value: _to,
-                      items: [for (final cur in all) DropdownMenuItem(value: cur, child: Text(cur))],
-                      onChanged: (v) => setState(() => _to = v ?? _to),
-                    ),
-                  ),
-                ]),
+                LayoutBuilder(builder: (context, box) {
+                  Widget picker(String label, String value, ValueChanged<String> onChanged) => DsDropdown<String>(
+                        label: label,
+                        value: value,
+                        items: [for (final cur in all) DropdownMenuItem(value: cur, child: Text(cur))],
+                        onChanged: (v) => v == null ? null : setState(() => onChanged(v)),
+                      );
+                  final Widget from = picker("From".tr, _from, (v) => _from = v);
+                  final Widget to = picker("To".tr, _to, (v) => _to = v);
+                  final Widget swap = DsIconButton(
+                    icon: Icons.swap_horiz_rounded,
+                    semanticLabel: "Swap".tr,
+                    variant: DsIconButtonVariant.outlined,
+                    onPressed: () => setState(() {
+                      final f = _from;
+                      _from = _to;
+                      _to = f;
+                    }),
+                  );
+                  // A small phone or large text: one picker under the other,
+                  // never two squeezed boxes.
+                  if (box.maxWidth < 300 * MediaQuery.textScalerOf(context).scale(1)) {
+                    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                      from,
+                      Padding(padding: const EdgeInsets.only(bottom: DsSpace.sm), child: Align(alignment: AlignmentDirectional.centerStart, child: swap)),
+                      to,
+                    ]);
+                  }
+                  return Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                    Expanded(child: from),
+                    Padding(padding: const EdgeInsets.fromLTRB(DsSpace.xs, 0, DsSpace.xs, DsSpace.lg), child: swap),
+                    Expanded(child: to),
+                  ]);
+                }),
                 Divider(height: 1, thickness: 1, color: c.divider),
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: DsSpace.md),
@@ -432,41 +488,36 @@ class RateScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return FinScaffold(
       title: ltr('$from / $to'),
-      body: StreamBuilder<List<FxRate>>(
-        stream: FinanceIntelService.rateHistory(from, to),
-        builder: (context, snap) {
-          if (snap.hasError) return FinBody(children: [FinState.error("Could not load the exchange rates.".tr)]);
-          if (!snap.hasData) return FinBody(children: [FinState.loading(rows: 3)]);
-          final h = snap.data!;
-          if (h.isEmpty) return FinBody(children: [FinState.empty(Icons.currency_exchange_rounded, "No exchange rate is published yet.".tr)]);
-          final last = h.last;
-          return FinBody(children: [
-            FinHeader(
-              overline: ltr('1 $from'),
-              title: ltr('${formatNumber(last.rate, decimals: 4)} $to'),
-              status: last.kind,
-              statusLabel: _kind(last),
-              icon: Icons.currency_exchange_rounded,
-            ),
-            if (h.length > 1)
-              _history(
-                context,
-                [for (final r in h) r.rate],
-                _date(h.first.observedAt),
-                _date(h.last.observedAt),
-                ltr(formatNumber(h.first.rate, decimals: 4)),
-                ltr(formatNumber(h.last.rate, decimals: 4)),
+      // Retry subscribes again: a failed stream does not recover by itself.
+      body: StatefulBuilder(
+        builder: (context, refresh) => StreamBuilder<List<FxRate>>(
+          stream: FinanceIntelService.rateHistory(from, to),
+          builder: (context, snap) {
+            if (snap.hasError) return FinBody(children: [FinState.error("Could not load the exchange rates.".tr, onRetry: () => refresh(() {}))]);
+            if (!snap.hasData) return FinBody(children: [FinState.loading(rows: 3)]);
+            final h = snap.data!;
+            if (h.isEmpty) return FinBody(children: [FinState.empty(Icons.currency_exchange_rounded, "No exchange rate is published yet.".tr)]);
+            final last = h.last;
+            return FinBody(children: [
+              FinHeader(
+                overline: ltr('1 $from'),
+                title: ltr('${formatNumber(last.rate, decimals: 4)} $to'),
+                status: last.kind,
+                statusLabel: _kind(last),
+                icon: Icons.currency_exchange_rounded,
               ),
-            FinSection(
-              title: "Source".tr,
-              footnote: "Indicative rates for information. The rate applied to a payment or transfer is the one shown when you confirm it.".tr,
-              children: [
-                FinRow("Published by".tr, last.source),
-                FinRow("Updated".tr, _dateTime(last.observedAt)),
-              ],
-            ),
-          ]);
-        },
+              if (h.length > 1) _history(context, [for (final r in h) r.rate], _date(h.first.observedAt), _date(h.last.observedAt), (v) => ltr(formatNumber(v, decimals: 4))),
+              FinSection(
+                title: "Source".tr,
+                footnote: "Indicative rates for information. The rate applied to a payment or transfer is the one shown when you confirm it.".tr,
+                children: [
+                  FinRow("Published by".tr, last.source),
+                  FinRow("Updated".tr, _dateTime(last.observedAt)),
+                ],
+              ),
+            ]);
+          },
+        ),
       ),
     );
   }
@@ -474,21 +525,35 @@ class RateScreen extends StatelessWidget {
 
 // ------------------------------------------------------------ opportunities
 
-class _Opportunities extends StatelessWidget {
+class _Opportunities extends StatefulWidget {
   final MatchingConfig config;
 
   const _Opportunities({required this.config});
 
   @override
+  State<_Opportunities> createState() => _OpportunitiesState();
+}
+
+class _OpportunitiesState extends State<_Opportunities> {
+  late Stream<Map<String, dynamic>?> _profile = FinanceIntelService.investorProfile();
+  late Stream<List<Opportunity>> _opportunities = FinanceIntelService.opportunities();
+
+  void _retry() => setState(() {
+        _profile = FinanceIntelService.investorProfile();
+        _opportunities = FinanceIntelService.opportunities();
+      });
+
+  @override
   Widget build(BuildContext context) {
+    final config = widget.config;
     return StreamBuilder<Map<String, dynamic>?>(
-      stream: FinanceIntelService.investorProfile(),
+      stream: _profile,
       builder: (context, ps) {
         final profile = InvestorProfile.fromMap(ps.data);
         return StreamBuilder<List<Opportunity>>(
-          stream: FinanceIntelService.opportunities(),
+          stream: _opportunities,
           builder: (context, snap) {
-            if (snap.hasError) return FinState.error("Could not load the opportunities.".tr);
+            if (snap.hasError) return FinState.error("Could not load the opportunities.".tr, onRetry: _retry);
             if (!snap.hasData) return FinState.loading();
             final now = DateTime.now();
             final open = snap.data!.where((o) => o.isOpen(now)).toList();
@@ -572,12 +637,17 @@ class _OpportunityRow extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              // The smallest ticket goes in the text, which wraps: beside the
+              // chevron it squeezed the title on a small phone. First, so a
+              // long sector line never cuts it off.
               FinListTile(
                 icon: m != null ? Icons.auto_awesome_rounded : Icons.lightbulb_outline_rounded,
                 iconTone: m != null ? DsTone.success : DsTone.brand,
                 title: o.title,
-                subtitle: [FinancingLabels.sector(o.sector).tr, IntelLabels.country(o.country).tr, IntelLabels.type(o.type).tr].join(' · '),
-                amount: '${"From".tr} ${FinanceMoney.format(o.minTicket, o.currency)}',
+                subtitle: [
+                  '${"From".tr} ${FinanceMoney.format(o.minTicket, o.currency)}',
+                  [FinancingLabels.sector(o.sector).tr, IntelLabels.country(o.country).tr, IntelLabels.type(o.type).tr].join(' · '),
+                ].join('\n'),
                 chevron: true,
               ),
               if (m != null)
@@ -605,11 +675,27 @@ class _OpportunityRow extends StatelessWidget {
 }
 
 /// One opportunity, and the user's interest (no investment happens here).
-class OpportunityScreen extends StatelessWidget {
+class OpportunityScreen extends StatefulWidget {
   final String opportunityId;
   final MatchResult? match;
 
   const OpportunityScreen({super.key, required this.opportunityId, this.match});
+
+  @override
+  State<OpportunityScreen> createState() => _OpportunityScreenState();
+}
+
+class _OpportunityScreenState extends State<OpportunityScreen> {
+  late Stream<Opportunity?> _opportunity = FinanceIntelService.opportunity(widget.opportunityId);
+
+  /// The interest was sent from this screen: not sent twice.
+  bool _sent = false;
+
+  /// Hides the opportunity, then goes back to the list it no longer belongs to.
+  Future<void> _notForMe(Opportunity o) async {
+    final ok = await FinanceUi.run(() => FinanceIntelService.respond(o.id, false), success: "Hidden");
+    if (ok && mounted) Get.back();
+  }
 
   Future<void> _interested(BuildContext context, Opportunity o) async {
     final message = TextEditingController();
@@ -631,16 +717,19 @@ class OpportunityScreen extends StatelessWidget {
         ),
       )),
     );
-    if (ok == true) await FinanceUi.run(() => FinanceIntelService.respond(o.id, true, message: message.text.trim()), success: "Interest sent");
+    if (ok != true) return;
+    final sent = await FinanceUi.run(() => FinanceIntelService.respond(o.id, true, message: message.text.trim()), success: "Interest sent");
+    if (sent && mounted) setState(() => _sent = true);
   }
 
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<Opportunity?>(
-      stream: FinanceIntelService.opportunity(opportunityId),
+      stream: _opportunity,
       builder: (context, snap) {
         final o = snap.data;
         final bool open = o != null && o.isOpen(DateTime.now());
+        final Widget? state = FinState.of(snap, onRetry: () => setState(() => _opportunity = FinanceIntelService.opportunity(widget.opportunityId)));
         return FinScaffold(
           title: "Opportunity".tr,
           bottomBar: !open
@@ -648,60 +737,69 @@ class OpportunityScreen extends StatelessWidget {
               : DsStickyBar(
                   child: FinanceKycGate(
                     builder: (context, verified) => Row(children: [
-                      Expanded(child: DsButton.secondary(label: "Not for me".tr, onPressed: () => FinanceUi.run(() => FinanceIntelService.respond(o.id, false), success: "Hidden"))),
+                      Expanded(child: DsButton.secondary(label: "Not for me".tr, onPressed: _sent ? null : () => _notForMe(o))),
                       const DsGap(DsSpace.sm),
-                      Expanded(child: DsButton.primary(label: "I am interested".tr, onPressed: verified ? () => _interested(context, o) : null)),
+                      Expanded(
+                        child: DsButton.primary(
+                          label: (_sent ? "Interest sent" : "I am interested").tr,
+                          icon: _sent ? Icons.check_rounded : null,
+                          onPressed: verified && !_sent ? () => _interested(context, o) : null,
+                        ),
+                      ),
                     ]),
                   ),
                 ),
-          body: snap.hasError
-              ? FinBody(children: [FinState.error("Could not load this opportunity.".tr)])
-              : o == null
-                  ? FinBody(children: [FinState.loading(rows: 4)])
-                  : FinBody(children: [
-                      FinHeader(
-                        overline: o.ownerName.isEmpty ? null : '${"Presented by".tr} ${o.ownerName}',
-                        title: o.title,
-                        subtitle: o.summary.isEmpty ? null : o.summary,
-                        status: open ? null : 'closed',
-                        statusLabel: open ? null : "Closed".tr,
-                        icon: Icons.lightbulb_outline_rounded,
-                        below: o.targetAmount > 0
-                            ? FinProgress(
-                                value: o.progress,
-                                label: '${"Raised".tr} ${FinanceMoney.format(o.raisedAmount, o.currency)} / ${FinanceMoney.format(o.targetAmount, o.currency)}',
-                              )
-                            : null,
-                      ),
-                      if (match != null)
-                        FinNotice(
-                          match!.reasons.map((r) => IntelLabels.reason(r).tr).join(', '),
-                          title: '${"Matches your preferences".tr}: ${ltr('${match!.score} %')}',
-                          tone: DsTone.success,
-                        ),
-                      FinSection(
-                        title: "Key facts".tr,
-                        children: [
-                          FinRow("Sector".tr, FinancingLabels.sector(o.sector).tr),
-                          FinRow("Country".tr, IntelLabels.country(o.country).tr),
-                          FinRow("Type".tr, IntelLabels.type(o.type).tr),
-                          FinRow("Minimum ticket".tr, FinanceMoney.format(o.minTicket, o.currency)),
-                          if (o.targetAmount > 0) FinRow("Raised".tr, '${FinanceMoney.format(o.raisedAmount, o.currency)} / ${FinanceMoney.format(o.targetAmount, o.currency)}'),
-                          if (o.horizonMonths > 0) FinRow("Horizon".tr, '${o.horizonMonths} ${"months".tr}'),
-                          FinRow("Risk level".tr, '${RiskScale.label(o.riskLevel).tr} · ${ltr('${o.riskLevel}/7')}'),
-                          if (o.targetReturnPercent != null) FinRow("Target return (not guaranteed)".tr, InvestmentLabels.percent(o.targetReturnPercent)),
-                          if (o.closingDate != null) FinRow("Closes on".tr, _date(o.closingDate)),
-                        ],
-                      ),
-                      FinNotice(
-                        "Investing in a company is risky: you can lose all the money invested, and it can be hard to sell your stake. Only invest what you can afford to lose, and read the documents the owner provides."
-                            .tr,
-                        tone: DsTone.warning,
-                      ),
-                    ]),
+          body: state != null ? FinBody(children: [state]) : _body(context, o!, open),
         );
       },
     );
+  }
+
+  Widget _body(BuildContext context, Opportunity o, bool open) {
+    final match = widget.match;
+    return FinBody(children: [
+      FinHeader(
+        overline: o.ownerName.isEmpty ? null : '${"Presented by".tr} ${o.ownerName}',
+        title: o.title,
+        subtitle: o.summary.isEmpty ? null : o.summary,
+        status: open ? null : 'closed',
+        statusLabel: open ? null : "Closed".tr,
+        icon: Icons.lightbulb_outline_rounded,
+        below: o.targetAmount > 0
+            ? FinProgress(
+                value: o.progress,
+                label: '${"Raised".tr} ${FinanceMoney.format(o.raisedAmount, o.currency)} / ${FinanceMoney.format(o.targetAmount, o.currency)}',
+              )
+            : null,
+      ),
+      if (_sent) FinNotice("The project owner has your name and email and can contact you. No money is committed.".tr, title: "Interest sent".tr, tone: DsTone.success),
+      if (match != null)
+        FinNotice(
+          match.reasons.map((r) => IntelLabels.reason(r).tr).join(', '),
+          title: '${"Matches your preferences".tr}: ${ltr('${match.score} %')}',
+          tone: DsTone.success,
+        ),
+      FinSection(
+        title: "Key facts".tr,
+        children: [
+          FinRow("Sector".tr, FinancingLabels.sector(o.sector).tr),
+          FinRow("Country".tr, IntelLabels.country(o.country).tr),
+          FinRow("Type".tr, IntelLabels.type(o.type).tr),
+          FinRow("Minimum ticket".tr, FinanceMoney.format(o.minTicket, o.currency)),
+          if (o.targetAmount > 0) FinRow("Raised".tr, '${FinanceMoney.format(o.raisedAmount, o.currency)} / ${FinanceMoney.format(o.targetAmount, o.currency)}'),
+          if (o.horizonMonths > 0) FinRow("Horizon".tr, FinanceUi.count(o.horizonMonths, "month", "months")),
+          FinRow("Risk level".tr, '${RiskScale.label(o.riskLevel).tr} · ${ltr('${o.riskLevel}/7')}'),
+          if (o.targetReturnPercent != null) FinRow("Target return (not guaranteed)".tr, InvestmentLabels.percent(o.targetReturnPercent)),
+          if (o.closingDate != null) FinRow("Closes on".tr, _date(o.closingDate)),
+        ],
+      ),
+      // The documents are with the owner, not on this screen.
+      FinNotice(
+        "Investing in a company is risky: you can lose all the money invested, and it can be hard to sell your stake. Only invest what you can afford to lose, and ask the owner for the project's documents before you decide."
+            .tr,
+        tone: DsTone.warning,
+      ),
+    ]);
   }
 }
 
@@ -722,8 +820,9 @@ class _InvestorProfileScreenState extends State<InvestorProfileScreen> {
   late final Set<String> _countries = {...(_p['countries'] is List ? (_p['countries'] as List).map((e) => e.toString()) : const <String>[])};
   late final Set<String> _types = {...(_p['types'] is List ? (_p['types'] as List).map((e) => e.toString()) : const <String>[])};
   late String _currency = widget.config.currencies.contains(_p['currency']) ? _p['currency'].toString() : widget.config.currencies.first;
-  late final _min = TextEditingController(text: _p['minTicket'] is num && FinanceMoney.exponent(_currency) == 0 ? '${(_p['minTicket'] as num).round()}' : '');
-  late final _max = TextEditingController(text: _p['maxTicket'] is num && FinanceMoney.exponent(_currency) == 0 ? '${(_p['maxTicket'] as num).round()}' : '');
+  // Saved amounts in any currency ("12.50" USD); no minimum stays empty.
+  late final _min = TextEditingController(text: _p['minTicket'] is num && (_p['minTicket'] as num) > 0 ? FinanceAmount.input(_p['minTicket'] as num, _currency) : '');
+  late final _max = TextEditingController(text: _p['maxTicket'] is num && (_p['maxTicket'] as num) > 0 ? FinanceAmount.input(_p['maxTicket'] as num, _currency) : '');
   late double _risk = (FinanceSummary.intOf(_p['maxRisk']) == 0 ? 4 : FinanceSummary.intOf(_p['maxRisk'])).clamp(1, 7).toDouble();
   late int _horizon = FinanceSummary.intOf(_p['maxHorizonMonths']);
 
@@ -734,10 +833,20 @@ class _InvestorProfileScreenState extends State<InvestorProfileScreen> {
     super.dispose();
   }
 
-  Future<void> _save() async {
-    final int min = _min.text.trim().isEmpty ? 0 : (FinanceAmount.parse(_min.text, _currency) ?? -1);
+  /// The smallest ticket: 0 when empty, -1 when not a valid amount.
+  int get _minTicket => _min.text.trim().isEmpty ? 0 : (FinanceAmount.parse(_min.text, _currency) ?? -1);
+
+  /// The amounts can be saved (the fields explain what is wrong as it is typed).
+  bool get _amountsValid {
+    final int min = _minTicket;
     final int? max = FinanceAmount.parse(_max.text, _currency);
-    if (min < 0 || max == null || max < min) return ShowToastDialog.showToast("Check the amounts.".tr);
+    return min >= 0 && max != null && max >= min;
+  }
+
+  Future<void> _save() async {
+    final int min = _minTicket;
+    final int? max = FinanceAmount.parse(_max.text, _currency);
+    if (!_amountsValid || max == null) return;
     final ok = await FinanceUi.run(
       () => FinanceIntelService.saveInvestorProfile({
         'currency': _currency,
@@ -779,32 +888,55 @@ class _InvestorProfileScreenState extends State<InvestorProfileScreen> {
   Widget build(BuildContext context) {
     final c = DsColors.of(context);
     final cfg = widget.config;
+    final bool valid = _amountsValid;
+    final int min = _minTicket;
+    final Widget from = FinAmountField(
+      label: "From".tr,
+      controller: _min,
+      currency: _currency,
+      requiredMark: false,
+      onChanged: (_) => setState(() {}),
+    );
+    // Below "From" it says the minimum it must reach.
+    final Widget upTo = FinAmountField(
+      label: "Up to".tr,
+      controller: _max,
+      currency: _currency,
+      min: min > 0 ? min : null,
+      onChanged: (_) => setState(() {}),
+    );
     return FinScaffold(
       title: "My investor preferences".tr,
-      bottomBar: DsStickyBar(child: DsButton.primary(label: "Save".tr, size: DsButtonSize.lg, expand: true, onPressed: _save)),
+      bottomBar: DsStickyBar(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            FinMissing([if (!valid) "a valid amount".tr]),
+            DsButton.primary(label: "Save".tr, size: DsButtonSize.lg, expand: true, onPressed: valid ? _save : null),
+          ],
+        ),
+      ),
       body: FinBody(children: [
         FinSection(
           title: "Amount per investment".tr,
           top: 0,
           padding: _formPadding,
           children: [
-            Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Expanded(child: DsTextField(label: "From".tr, controller: _min, keyboardType: TextInputType.number)),
-              const DsGap(DsSpace.sm),
-              Expanded(child: DsTextField(label: "Up to".tr, controller: _max, keyboardType: TextInputType.number, requiredMark: true)),
-              if (cfg.currencies.length > 1) ...[
-                const DsGap(DsSpace.sm),
-                SizedBox(
-                  width: 100,
-                  child: DsDropdown<String>(
-                    label: "Currency".tr,
-                    value: _currency,
-                    items: [for (final cur in cfg.currencies) DropdownMenuItem(value: cur, child: Text(cur))],
-                    onChanged: (v) => setState(() => _currency = v ?? _currency),
-                  ),
-                ),
-              ],
-            ]),
+            if (cfg.currencies.length > 1)
+              DsDropdown<String>(
+                label: "Currency".tr,
+                value: _currency,
+                items: [for (final cur in cfg.currencies) DropdownMenuItem(value: cur, child: Text(cur))],
+                onChanged: (v) => setState(() => _currency = v ?? _currency),
+              ),
+            // Side by side when there is room, one under the other on a
+            // small phone or with large text.
+            LayoutBuilder(
+              builder: (context, box) => box.maxWidth < 340 * MediaQuery.textScalerOf(context).scale(1)
+                  ? Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [from, upTo])
+                  : Row(crossAxisAlignment: CrossAxisAlignment.start, children: [Expanded(child: from), const DsGap(DsSpace.sm), Expanded(child: upTo)]),
+            ),
           ],
         ),
         FinSection(
@@ -815,14 +947,23 @@ class _InvestorProfileScreenState extends State<InvestorProfileScreen> {
               '${"Highest risk I accept".tr}: ${ltr('${_risk.round()}/7')} · ${RiskScale.label(_risk.round()).tr}',
               style: DsTypography.label.copyWith(color: c.textPrimary),
             ),
-            Slider(value: _risk, min: 1, max: 7, divisions: 6, label: '${_risk.round()}', onChanged: (v) => setState(() => _risk = v)),
+            Slider(
+              value: _risk,
+              min: 1,
+              max: 7,
+              divisions: 6,
+              label: '${_risk.round()}',
+              // Read out as the risk level, not as a share of the track.
+              semanticFormatterCallback: (v) => '${ltr('${v.round()}/7')}, ${RiskScale.label(v.round()).tr}',
+              onChanged: (v) => setState(() => _risk = v),
+            ),
             const DsGap(DsSpace.sm),
             DsDropdown<int>(
               label: "Longest time I can invest for".tr,
               value: _horizon,
               items: [
                 DropdownMenuItem(value: 0, child: Text("No limit".tr)),
-                for (final m in const [12, 24, 36, 60, 120]) DropdownMenuItem(value: m, child: Text('$m ${"months".tr}')),
+                for (final m in const [12, 24, 36, 60, 120]) DropdownMenuItem(value: m, child: Text(FinanceUi.count(m, "month", "months"))),
               ],
               onChanged: (v) => setState(() => _horizon = v ?? 0),
             ),

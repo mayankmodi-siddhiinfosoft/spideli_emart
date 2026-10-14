@@ -33,26 +33,32 @@ The finance layer on top of the app design system (`customer/lib/themes/ds`). Co
 | `FinBody(children)` | The scrolling body with the standard padding |
 | `FinHero(label, amount, caption, stats, footer)` | The focal amount (available balance, portfolio value, card balance) with up to 3 `FinHeroStat` and actions |
 | `FinHeader(overline, title, subtitle, status, statusLabel, icon, below)` | The headline of a detail screen: what it is, the amount, the status |
-| `FinSection(title, actionLabel, onAction, children, divided, footnote, top)` | A titled group in one surface |
+| `FinSection(title, actionLabel, onAction, children, divided, footnote, top, surface)` | A titled group in one surface; `surface: false` for children that are surfaces themselves (`FinMetrics`). The action link is a 48 dp button |
 | `FinSurface(child, onTap)` | A bare surface |
 | `FinRow(label, value, sub, valueColor, strong)` | A label / value line, value right-aligned and tabular |
-| `FinListTile(icon, iconTone, title, subtitle, amount, amountColor, status, statusLabel, chevron, onTap)` | Rows of lists: transactions, goals, loans, policies… |
-| `FinMetrics(items: [FinMetric])` | 2-column key figures in one surface |
+| `FinListTile(icon, iconTone, title, subtitle, amount, amountColor, status, statusLabel, chevron, onTap)` | Rows of lists: transactions, goals, loans, policies… Below 300 dp (scaled with the text size) the amount and status go under the title instead of beside it |
+| `FinMetrics(items: [FinMetric(label, value, sub)])` | 2-column key figures in one surface |
 | `FinProgress(value, label, trailing, tone)` | A labelled progress bar |
 | `FinTrack(steps, current, ended, endedLabel)` | Where a record is in its workflow |
 | `FinActions(actions: [FinAction], onHero)` | Up to 4 per row primary actions (icon square + label) |
 | `FinStatusChip(status, label, icon)` / `FinStatus.tone(status)` | The one status catalogue for every module |
 | `FinNotice(message, title, tone, actionLabel, onAction)` | Disclosures, estimates, requirements, errors |
 | `FinState.loading / error / empty` | Section states with the same footprint (layouts stay still) |
+| `FinState.of(snapshot, gone, onRetry)` | The state of a one-record stream: loading, error with Retry, or "no longer available" for a missing document (never an endless skeleton); null when there is data |
+| `FinConfig<T>(load, builder)` | Loads a module's settings once; on failure an error with Retry instead of "not available" |
+| `FinMissing(items)` | "To continue: …" above a disabled button: why it is disabled |
+| `finPickDate` / `finPickDateRange` | Date pickers in the navy, wherever they are opened from |
 | `finConfirm(title, message, lines, total, confirmLabel, destructive)` | Confirmation sheet listing the figures before a sensitive action |
-| `FinBarChart` | Grouped bars per period with a tap read-out |
-| `FinShareBar` | Allocation / split bar with legend |
+| `FinBarChart` | Grouped bars per period with a tap read-out; shows as many recent periods as fit (≥ 40 dp each), a wrapping legend, "No figures for this period yet." when empty, always left to right |
+| `FinShareBar(parts, percent)` | Allocation / split bar: 8 hues with dark variants; the legend names each part with its amount (and share with `percent: true`) |
 | `FinanceLineChart` (finance_widgets) | A value over time |
+| `FinAmountField(label, controller, currency, currencies, min, max, helper)` (finance_widgets) | Amount entry: currency suffix, decimals per currency, inline min / max / format errors; the currency picker goes under the field on narrow screens |
+| `FinPickerField` / `finPickOne` (finance_widgets) | A choice: a dropdown up to 8 options, a searchable sheet from 9 (banks, countries, billers, packages) |
 
 Existing pieces kept and restyled by the accent:
 - `DsButton.*`, with built-in `loading` and disabled states;
 - `DsTextField`, `DsDropdown`, `DsSegmentedTabs`, `DsBottomSheet`, `DsInlineAlert`, `DsSkeleton*`;
-- `FinancePaySheet`, which chooses the payment method and shows the result;
+- `FinancePaySheet`, which chooses the payment method and shows the result; one sheet at a time, a failed payment offers "Try again" with the same request key;
 - `FinanceKycGate`.
 
 ## 4. Screen patterns
@@ -68,10 +74,13 @@ Existing pieces kept and restyled by the accent:
   - then history lists;
   - destructive actions last, as ghost buttons behind `finConfirm`.
 - **Forms:**
-  - `FinSection`s grouping related fields (`DsTextField` / `DsDropdown`); mandatory fields marked;
-  - numeric keyboards for amounts;
-  - an estimate / summary section showing fees and obligations **before** the action;
-  - the action in the sticky bottom bar, disabled until valid;
+  - `FinSection`s grouping related fields (`DsTextField` / `DsDropdown` / `FinPickerField`); mandatory fields marked, optional ones labelled;
+  - each field shows its own error once touched (not toasts); `FinMissing` above the action lists what is still needed;
+  - `FinAmountField` for amounts (numeric keyboard, currency suffix, limits inline);
+  - an estimate / summary section showing fees, commission, interest and obligations **before** the action, then `finConfirm` for money and destructive actions;
+  - the action in the sticky bottom bar, disabled until valid, with its `loading` state while the call runs;
+  - one request key per intent (`FinanceRequestKeys.of(intent)`), so a second tap or a retry after a timeout can never charge twice; released with `done` after success;
+  - what the user typed stays when they come back from a sheet, a failure or a scroll;
   - money operations end in `FinancePaySheet`, where success shows only when the server confirms.
 - **Sheets:** short contextual tasks (amount entry, confirmation, details). Workflows get screens.
 
@@ -87,11 +96,21 @@ Home leaves Finance.
 
 | Tab | Screen | Content |
 |---|---|---|
-| Home | `FinanceHomeScreen` | wallet hero (Send, Pay bills, Save, Invest), coming up, your money, recent activity ("See all" → Wallet tab) |
-| Wallet | `TransactionsScreen(asTab: true)` | wallets per currency, search, filters, statement |
+| Home | `FinanceHomeScreen` | wallet hero (Send, Pay bills, Save, Invest; Retry when the balance fails), needs your action, coming up, this month (money in / out vs the month before → Insights), your money, recent activity ("See all" → Wallet tab) |
+| Wallet | `TransactionsScreen(asTab: true)` | wallets per currency (the dashboard currency first, as on Home), debounced search that looks a few pages back, type and date filters, "Load more", details with copy reference, statement |
 | Services | `FinanceServicesTab` | the nine services, each with what it is for: Pay and send (money transfer, payment, virtual card), Save and invest (collective savings, tontine, investment), Borrow and protect (loan, online insurance), Get help (AI assistant) |
 | Insights | `FinanceInsightsTab` | cash flow, last 30 days, AI assistant, markets, statement |
 | Profile | `FinanceProfileTab` | identity header, document verification, groups, wallets, statement, help, other Spideli services |
+
+"Needs your action" (`FinanceActionsSection`, all of them in
+`FinanceActionsScreen`) comes from `FinanceActionsService`: tontine and
+savings goal invitations, loans to vote on (not voted yet) or fund, the
+user's loan agreement or overdue repayment, valid insurance quotes, claims
+the insurer asked about, transfers and bill payments waiting for their
+confirmation. Urgent first, then the soonest due; each opens the screen where
+it is done. The rules are pure (`utils/finance_actions.dart`, tested); the
+service shares one subscription per source and re-checks expiries every
+minute. Hidden when nothing waits.
 
 Diagram to screens: document verification → Profile; statistics → Insights
 (and "Your money" on Home); groups → Profile › Groups (`FinanceGroupsScreen`);
@@ -117,12 +136,16 @@ Every async section shows:
 
 Firestore's offline cache keeps the last data on screen when the connection drops. Actions report the server's refusal through `FinanceErrors`, and forms keep what the user typed.
 
+Reads: the profile, the accounts and the summary are shared streams (`SharedLatest`): one Firestore listener each whatever the number of widgets, the latest value at once for a widget built later, closed when the last one leaves. `FinanceService.retry()` reopens them after an error (permission denied, offline at start). A source the user cannot read counts as nothing to show in "Needs your action", never as an error of the dashboard.
+
 ## 7. Accessibility, platforms
 
-- Touch targets ≥ 44 px.
+- Touch targets ≥ 48 dp (section links, chips, icon buttons).
 - `MergeSemantics` on rows. The hero and charts carry readable semantic labels, and section titles are headers.
 - Colour plus text plus icon for every status.
 - Text scales: amounts use `FittedBox(scaleDown)` instead of clipping.
 - Motion is limited to bar animations, which are disabled when the system asks to reduce motion.
 - RTL: `AlignmentDirectional` / `EdgeInsetsDirectional` throughout; chevrons follow the reading direction.
+- Small screens and large text: `test/finance_layout_test.dart` lays every component out at 320 × 640 dp with text at 1.0 and 1.3, right to left and dark, and fails on any overflow.
+- Sensitive screens (card details) call `FinanceSecureScreen`: FLAG_SECURE on Android, a navy cover in the iOS app switcher (`AppDelegate.swift`).
 - Platform conventions come from the DS: Material 3 on Android (system bars, back gesture), Cupertino-style navigation on iOS (safe areas, swipe back); sheets are DS sheets on both.

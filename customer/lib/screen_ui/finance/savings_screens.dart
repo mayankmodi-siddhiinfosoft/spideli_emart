@@ -4,7 +4,6 @@ import 'package:customer/screen_ui/finance/finance_widgets.dart';
 import 'package:customer/service/finance_group_service.dart';
 import 'package:customer/service/finance_service.dart';
 import 'package:customer/themes/ds/ds.dart';
-import 'package:customer/themes/show_toast_dialog.dart';
 import 'package:customer/utils/finance_group_rules.dart';
 import 'package:customer/utils/finance_rules.dart';
 import 'package:flutter/material.dart';
@@ -13,7 +12,12 @@ import 'package:intl/intl.dart';
 
 String _date(DateTime? d) => d == null ? '-' : ltr(DateFormat('dd MMM yyyy').format(d));
 
-String _statusLabel(String s) => const {'active': 'Active', 'completed': 'Completed', 'cancelled': 'Cancelled'}[s] ?? s;
+/// Known goal statuses; any other is shown humanized, never as a raw key.
+String _statusLabel(String s) =>
+    const {'active': 'Active', 'completed': 'Completed', 'cancelled': 'Cancelled'}[s] ??
+    (s.trim().isEmpty ? 'Unknown' : s[0].toUpperCase() + s.substring(1).replaceAll('_', ' '));
+
+bool _emailOk(String e) => RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(e);
 
 /// Form sections: room above the first label; every field brings its own
 /// bottom spacing.
@@ -26,19 +30,21 @@ Widget _quiet(BuildContext context, String text) => Padding(
     );
 
 /// Spideli Finance > Savings goals: the user's goals and invitations.
-/// `platform_settings/savings` must exist (admin), else "not available".
+/// `platform_settings/savings` must exist (admin), else "not available";
+/// a failed read offers Retry.
 class SavingsListScreen extends StatelessWidget {
   const SavingsListScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<SavingsConfig?>(
-      future: FinanceGroupService.savingsConfig(),
-      builder: (context, cfgSnap) {
-        final cfg = cfgSnap.data;
+    return FinConfig<SavingsConfig>(
+      load: FinanceGroupService.savingsConfig,
+      builder: (context, st) {
+        final cfg = st.config;
+        final Widget? placeholder = st.placeholder(Icons.savings_outlined, "Savings goals are not available yet.".tr);
         return FinScaffold(
           title: "Collective savings".tr,
-          bottomBar: cfg == null
+          bottomBar: !st.ready
               ? null
               : DsStickyBar(
                   child: DsButton.primary(
@@ -46,17 +52,12 @@ class SavingsListScreen extends StatelessWidget {
                     icon: Icons.add_rounded,
                     size: DsButtonSize.lg,
                     expand: true,
-                    onPressed: () => Get.to(() => SavingsGoalFormScreen(config: cfg)),
+                    onPressed: () => Get.to(() => SavingsGoalFormScreen(config: cfg!)),
                   ),
                 ),
           body: FinBody(
             children: [
-              if (cfgSnap.connectionState == ConnectionState.waiting)
-                FinState.loading()
-              else if (cfg == null)
-                FinState.empty(Icons.savings_outlined, "Savings goals are not available yet.".tr)
-              else
-                ...const [_SavingsHero(), _GoalInvitations(), _GoalList()],
+              if (placeholder != null) placeholder else ...const [_SavingsHero(), _GoalInvitations(), _GoalList()],
             ],
           ),
         );
@@ -84,7 +85,7 @@ class _SavingsHero extends StatelessWidget {
           label: "Saved so far".tr,
           amount: m(savings['savedAmount']),
           caption: '${FinanceSummary.intOf(savings['activeGoals'])} ${"active".tr} · ${"Target amount".tr} ${m(savings['targetAmount'])}',
-          footer: progress == null ? null : _HeroProgress(value: progress),
+          footer: progress == null ? null : _HeroProgress(value: progress, label: "Progress toward your targets".tr),
         );
       },
     );
@@ -95,31 +96,37 @@ class _SavingsHero extends StatelessWidget {
 class _HeroProgress extends StatelessWidget {
   final double value;
 
-  const _HeroProgress({required this.value});
+  /// What the bar measures, for screen readers.
+  final String label;
+
+  const _HeroProgress({required this.value, required this.label});
 
   @override
   Widget build(BuildContext context) {
     final double v = value.clamp(0.0, 1.0);
     final String pct = '${(v * 100).round()}%';
     return Semantics(
+      label: label,
       value: pct,
-      child: Row(
-        children: [
-          Expanded(
-            child: ClipRRect(
-              borderRadius: DsRadius.brPill,
-              child: SizedBox(
-                height: 6,
-                child: Stack(children: [
-                  Container(color: Colors.white.withValues(alpha: 0.16)),
-                  FractionallySizedBox(alignment: AlignmentDirectional.centerStart, widthFactor: v, child: Container(color: Colors.white)),
-                ]),
+      child: ExcludeSemantics(
+        child: Row(
+          children: [
+            Expanded(
+              child: ClipRRect(
+                borderRadius: DsRadius.brPill,
+                child: SizedBox(
+                  height: 6,
+                  child: Stack(children: [
+                    Container(color: Colors.white.withValues(alpha: 0.16)),
+                    FractionallySizedBox(alignment: AlignmentDirectional.centerStart, widthFactor: v, child: Container(color: Colors.white)),
+                  ]),
+                ),
               ),
             ),
-          ),
-          const DsGap(DsSpace.sm),
-          Text(pct, style: DsTypography.caption.copyWith(color: Colors.white, fontWeight: FontWeight.w600).tabular),
-        ],
+            const DsGap(DsSpace.sm),
+            Text(pct, style: DsTypography.caption.copyWith(color: Colors.white, fontWeight: FontWeight.w600).tabular),
+          ],
+        ),
       ),
     );
   }
@@ -160,6 +167,26 @@ class _Invitation extends StatelessWidget {
 class _GoalInvitations extends StatelessWidget {
   const _GoalInvitations();
 
+  /// Joining is a commitment to a shared goal: its terms first.
+  Future<void> _join(SavingsGoal g) async {
+    final String cur = g.currency;
+    final ok = await finConfirm(
+      title: "Join this savings goal?".tr,
+      message: "You will see the goal's progress and can add money to it. Its members see your contributions.".tr,
+      lines: [
+        ("Purpose".tr, GroupLabels.purpose(g.purpose).tr),
+        ("Target amount".tr, FinanceMoney.format(g.targetAmount, cur)),
+        ("Saved so far".tr, FinanceMoney.format(g.savedAmount, cur)),
+        if (g.deadline != null) ("Deadline".tr, _date(g.deadline)),
+        if (g.frequency != null) ("Schedule".tr, '${FinanceMoney.format(g.scheduleAmount, cur)} · ${Frequency.label(g.frequency).tr}'),
+        ("Members".tr, '${g.memberIds.length}'),
+      ],
+      confirmLabel: "Join".tr,
+      cancelLabel: "Not now".tr,
+    );
+    if (ok) await FinanceUi.run(() => FinanceGroupService.respondToGoalInvite(g.id, true), success: "You joined the goal");
+  }
+
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<List<SavingsGoal>>(
@@ -177,7 +204,7 @@ class _GoalInvitations extends StatelessWidget {
                 title: g.name,
                 subtitle: '${GroupLabels.purpose(g.purpose).tr} · ${FinanceMoney.format(g.targetAmount, g.currency)}',
                 onDecline: () => FinanceUi.run(() => FinanceGroupService.respondToGoalInvite(g.id, false)),
-                onJoin: () => FinanceUi.run(() => FinanceGroupService.respondToGoalInvite(g.id, true), success: "You joined the goal"),
+                onJoin: () => _join(g),
               ),
           ],
         );
@@ -191,29 +218,31 @@ class _GoalList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<List<SavingsGoal>>(
-      stream: FinanceGroupService.myGoals(),
-      builder: (context, snap) {
-        if (snap.hasError) return FinState.error("Could not load your savings goals.".tr);
-        if (!snap.hasData) return FinState.loading();
-        final goals = snap.data!;
-        if (goals.isEmpty) {
-          return FinState.empty(
-            Icons.savings_outlined,
-            "No savings goal yet".tr,
-            message: "Save step by step for a home, studies, travel, health or a project.".tr,
+    return FinReload(
+      builder: (context, retry) => StreamBuilder<List<SavingsGoal>>(
+        stream: FinanceGroupService.myGoals(),
+        builder: (context, snap) {
+          if (snap.hasError) return FinState.error("Could not load your savings goals.".tr, onRetry: retry);
+          if (!snap.hasData) return FinState.loading();
+          final goals = snap.data!;
+          if (goals.isEmpty) {
+            return FinState.empty(
+              Icons.savings_outlined,
+              "No savings goal yet".tr,
+              message: "Save step by step for a home, studies, travel, health or a project.".tr,
+            );
+          }
+          final active = goals.where((g) => g.isActive).toList();
+          final closed = goals.where((g) => !g.isActive).toList();
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (active.isNotEmpty) FinSection(title: "Active goals".tr, divided: true, children: [for (final g in active) _GoalTile(goal: g)]),
+              if (closed.isNotEmpty) FinSection(title: "Closed".tr, divided: true, children: [for (final g in closed) _GoalTile(goal: g)]),
+            ],
           );
-        }
-        final active = goals.where((g) => g.isActive).toList();
-        final closed = goals.where((g) => !g.isActive).toList();
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (active.isNotEmpty) FinSection(title: "Active goals".tr, divided: true, children: [for (final g in active) _GoalTile(goal: g)]),
-            if (closed.isNotEmpty) FinSection(title: "Closed".tr, divided: true, children: [for (final g in closed) _GoalTile(goal: g)]),
-          ],
-        );
-      },
+        },
+      ),
     );
   }
 }
@@ -265,44 +294,99 @@ class _GoalTile extends StatelessWidget {
   }
 }
 
-/// New savings goal. Choices come from the admin configuration.
+/// New savings goal, or - with [goal] - the owner's changes to one: name,
+/// description, deadline and schedule (what `savingsUpdateGoal` accepts).
+/// Choices come from the admin configuration.
 class SavingsGoalFormScreen extends StatefulWidget {
   final SavingsConfig config;
+  final SavingsGoal? goal;
 
-  const SavingsGoalFormScreen({super.key, required this.config});
+  const SavingsGoalFormScreen({super.key, required this.config, this.goal});
 
   @override
   State<SavingsGoalFormScreen> createState() => _SavingsGoalFormScreenState();
 }
 
 class _SavingsGoalFormScreenState extends State<SavingsGoalFormScreen> {
-  final _name = TextEditingController();
-  final _description = TextEditingController();
-  final _target = TextEditingController();
-  final _scheduleAmount = TextEditingController();
+  SavingsGoal? get _goal => widget.goal;
+  bool get _editing => widget.goal != null;
+
+  late final _name = TextEditingController(text: _goal?.name ?? '');
+  late final _description = TextEditingController(text: _goal?.description ?? '');
+  late final _target = TextEditingController(text: _goal == null ? '' : FinanceAmount.input(_goal!.targetAmount, _goal!.currency));
+  late final _scheduleAmount = TextEditingController(text: _goal?.frequency == null ? '' : FinanceAmount.input(_goal!.scheduleAmount, _goal!.currency));
   final _invites = TextEditingController();
+  final _invitesFocus = FocusNode();
+  late final _deadlineText = TextEditingController(text: _goal?.deadline == null ? '' : _date(_goal!.deadline));
   late String _purpose = widget.config.purposes.first;
-  late String _currency = widget.config.currencies.first;
-  String? _frequency;
-  DateTime? _deadline;
+  late String _currency = _goal?.currency ?? widget.config.currencies.first;
+  late String? _frequency = _goal?.frequency;
+  late DateTime? _deadline = _goal?.deadline;
+
+  @override
+  void initState() {
+    super.initState();
+    // The addresses are checked as a whole once the field is left.
+    _invitesFocus.addListener(() {
+      if (mounted) setState(() {});
+    });
+  }
 
   @override
   void dispose() {
-    for (final c in [_name, _description, _target, _scheduleAmount, _invites]) {
+    for (final c in [_name, _description, _target, _scheduleAmount, _invites, _deadlineText]) {
       c.dispose();
     }
+    _invitesFocus.dispose();
     super.dispose();
   }
 
+  List<String> get _emails => _invites.text.split(RegExp(r'[,;\s]+')).map((e) => e.trim().toLowerCase()).where((e) => e.isNotEmpty).toList();
+
+  /// What is wrong with the invitations, naming the address; [typing]
+  /// leaves the address being typed alone.
+  String? _invitesProblem({bool typing = false}) {
+    final emails = _emails;
+    final bool lastDone = !typing || RegExp(r'[,;\s]$').hasMatch(_invites.text);
+    final checked = lastDone ? emails : (emails.isEmpty ? emails : emails.sublist(0, emails.length - 1));
+    final bad = checked.where((e) => !_emailOk(e)).toList();
+    if (bad.isNotEmpty) return "This email address is not valid: @email".trParams({'email': bad.first});
+    if (emails.length + 1 > widget.config.maxMembers) {
+      return "A group goal has at most @max members, you included.".trParams({'max': '${widget.config.maxMembers}'});
+    }
+    return null;
+  }
+
+  /// What is still needed before the goal can be saved (translated).
+  List<String> _missing() {
+    final int? schedule = FinanceAmount.parse(_scheduleAmount.text, _currency);
+    return [
+      if (_name.text.trim().isEmpty) "Name".tr,
+      if (!_editing && FinanceAmount.parse(_target.text, _currency) == null) "Target amount".tr,
+      if (_frequency != null && schedule == null) "Amount each time".tr,
+      if (!_editing && _invitesProblem() != null) "Emails, separated by commas".tr,
+    ];
+  }
+
+  Future<void> _pickDeadline() async {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final DateTime initial = _deadline != null && !_deadline!.isBefore(today) ? _deadline! : DateTime(now.year + 1, now.month, now.day);
+    final d = await showDatePicker(context: context, initialDate: initial, firstDate: today, lastDate: DateTime(now.year + 30));
+    if (d != null) {
+      setState(() {
+        _deadline = d;
+        _deadlineText.text = _date(d);
+      });
+    }
+  }
+
   Future<void> _save() async {
-    final int? target = FinanceAmount.parse(_target.text, _currency);
+    if (_missing().isNotEmpty) return;
     final int? schedule = _frequency == null ? null : FinanceAmount.parse(_scheduleAmount.text, _currency);
-    if (_name.text.trim().isEmpty) return ShowToastDialog.showToast("Please give the goal a name.".tr);
-    if (target == null) return ShowToastDialog.showToast("Please enter a valid target amount.".tr);
-    if (_frequency != null && schedule == null) return ShowToastDialog.showToast("Please enter the amount of each scheduled contribution.".tr);
-    final emails = _invites.text.split(RegExp(r'[,;\s]+')).map((e) => e.trim().toLowerCase()).where((e) => e.isNotEmpty).toList();
-    if (emails.any((e) => !RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(e))) return ShowToastDialog.showToast("Please check the email addresses.".tr);
-    if (emails.length + 1 > widget.config.maxMembers) return ShowToastDialog.showToast("${"A group goal has at most".tr} ${widget.config.maxMembers} ${"members".tr}.");
+    final g = _goal;
+    if (g != null) return _update(g, schedule);
+    final int target = FinanceAmount.parse(_target.text, _currency)!;
     String? id;
     final ok = await FinanceUi.run(() async {
       id = await FinanceGroupService.createGoal(
@@ -314,18 +398,62 @@ class _SavingsGoalFormScreenState extends State<SavingsGoalFormScreen> {
         deadline: _deadline,
         frequency: _frequency,
         scheduleAmount: schedule,
-        inviteEmails: emails,
+        inviteEmails: _emails,
       );
     }, success: "Savings goal created");
     if (ok && id != null) Get.off(() => SavingsGoalScreen(goalId: id!));
   }
 
+  /// Sends only what changed; a removed schedule is cleared.
+  Future<void> _update(SavingsGoal g, int? schedule) async {
+    final String name = _name.text.trim();
+    final String description = _description.text.trim();
+    final bool deadlineChanged = _deadline != null && (g.deadline == null || !DateUtils.isSameDay(_deadline, g.deadline));
+    final bool scheduleChanged = _frequency != g.frequency || (_frequency != null && schedule != g.scheduleAmount);
+    if (name == g.name && description == g.description && !deadlineChanged && !scheduleChanged) {
+      Get.back();
+      return;
+    }
+    final ok = await FinanceUi.run(
+      () => FinanceGroupService.updateGoal(
+        g.id,
+        name: name == g.name ? null : name,
+        description: description == g.description ? null : description,
+        deadline: deadlineChanged ? _deadline : null,
+        frequency: scheduleChanged ? _frequency : null,
+        scheduleAmount: scheduleChanged ? schedule : null,
+        clearSchedule: scheduleChanged && _frequency == null,
+      ),
+      success: "Savings goal updated",
+    );
+    if (ok) Get.back();
+  }
+
   @override
   Widget build(BuildContext context) {
     final cfg = widget.config;
+    final missing = _missing();
+    // A saved deadline can be moved, not removed (the update has no "none").
+    final bool canClearDeadline = _deadline != null && _goal?.deadline == null;
+    final String? invitesError = _invitesProblem(typing: _invitesFocus.hasFocus);
+    final frequencies = [...cfg.frequencies, if (_frequency != null && !cfg.frequencies.contains(_frequency)) _frequency!];
     return FinScaffold(
-      title: "New savings goal".tr,
-      bottomBar: DsStickyBar(child: DsButton.primary(label: "Create goal".tr, size: DsButtonSize.lg, expand: true, onPressed: _save)),
+      title: (_editing ? "Edit the goal" : "New savings goal").tr,
+      bottomBar: DsStickyBar(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            FinMissing(missing),
+            DsButton.primary(
+              label: (_editing ? "Save changes" : "Create goal").tr,
+              size: DsButtonSize.lg,
+              expand: true,
+              onPressed: missing.isEmpty ? _save : null,
+            ),
+          ],
+        ),
+      ),
       body: FinBody(
         children: [
           FinSection(
@@ -333,44 +461,44 @@ class _SavingsGoalFormScreenState extends State<SavingsGoalFormScreen> {
             top: 0,
             padding: _formPadding,
             children: [
-              DsTextField(label: "Name".tr, controller: _name, requiredMark: true),
-              DsDropdown<String>(
-                label: "Purpose".tr,
-                value: _purpose,
-                items: [for (final p in cfg.purposes) DropdownMenuItem(value: p, child: Text(GroupLabels.purpose(p).tr))],
-                onChanged: (v) => setState(() => _purpose = v ?? _purpose),
-              ),
+              DsTextField(label: "Name".tr, controller: _name, requiredMark: true, onChanged: (_) => setState(() {})),
+              if (!_editing)
+                DsDropdown<String>(
+                  label: "Purpose".tr,
+                  value: _purpose,
+                  items: [for (final p in cfg.purposes) DropdownMenuItem(value: p, child: Text(GroupLabels.purpose(p).tr))],
+                  onChanged: (v) => setState(() => _purpose = v ?? _purpose),
+                ),
               DsTextField(label: "Description".tr, controller: _description, maxLines: 3),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(child: DsTextField(label: "Target amount".tr, controller: _target, requiredMark: true, keyboardType: const TextInputType.numberWithOptions(decimal: true))),
-                  const DsGap(DsSpace.sm),
-                  SizedBox(
-                    width: 110,
-                    child: DsDropdown<String>(
-                      label: "Currency".tr,
-                      value: _currency,
-                      items: [for (final c in cfg.currencies) DropdownMenuItem(value: c, child: Text(c))],
-                      onChanged: (v) => setState(() => _currency = v ?? _currency),
-                    ),
-                  ),
-                ],
-              ),
+              if (!_editing)
+                FinAmountField(
+                  label: "Target amount".tr,
+                  controller: _target,
+                  currency: _currency,
+                  currencies: cfg.currencies,
+                  onCurrencyChanged: (v) => setState(() => _currency = v),
+                  onChanged: (_) => setState(() {}),
+                ),
               DsTextField(
                 label: "Deadline (optional)".tr,
-                controller: TextEditingController(text: _deadline == null ? '' : _date(_deadline)),
+                controller: _deadlineText,
                 readOnly: true,
-                suffix: const Icon(Icons.event_outlined, size: 18),
-                onTap: () async {
-                  final now = DateTime.now();
-                  final d = await showDatePicker(context: context, initialDate: _deadline ?? DateTime(now.year + 1, now.month, now.day), firstDate: now, lastDate: DateTime(now.year + 30));
-                  if (d != null) setState(() => _deadline = d);
-                },
+                helper: _goal?.deadline != null ? "A saved deadline can be moved, not removed.".tr : null,
+                suffix: canClearDeadline
+                    ? IconButton(
+                        tooltip: "Clear".tr,
+                        icon: const Icon(Icons.close_rounded, size: 20),
+                        onPressed: () => setState(() {
+                          _deadline = null;
+                          _deadlineText.clear();
+                        }),
+                      )
+                    : const Icon(Icons.event_outlined, size: 18),
+                onTap: _pickDeadline,
               ),
             ],
           ),
-          if (cfg.frequencies.isNotEmpty)
+          if (frequencies.isNotEmpty)
             FinSection(
               title: "Scheduled contributions (optional)".tr,
               padding: _formPadding,
@@ -381,20 +509,36 @@ class _SavingsGoalFormScreenState extends State<SavingsGoalFormScreen> {
                   value: _frequency,
                   items: [
                     DropdownMenuItem(value: null, child: Text("No schedule".tr)),
-                    for (final f in cfg.frequencies) DropdownMenuItem(value: f, child: Text(Frequency.label(f).tr)),
+                    for (final f in frequencies) DropdownMenuItem(value: f, child: Text(Frequency.label(f).tr)),
                   ],
                   onChanged: (v) => setState(() => _frequency = v),
                 ),
+                // Once a frequency is chosen, the amount of each contribution is required.
                 if (_frequency != null)
-                  DsTextField(label: "${"Amount each time".tr} ($_currency)", controller: _scheduleAmount, keyboardType: const TextInputType.numberWithOptions(decimal: true)),
+                  FinAmountField(
+                    label: "Amount each time".tr,
+                    controller: _scheduleAmount,
+                    currency: _currency,
+                    onChanged: (_) => setState(() {}),
+                  ),
               ],
             ),
-          if (cfg.groupGoals)
+          if (cfg.groupGoals && !_editing)
             FinSection(
               title: "Save together (optional)".tr,
               padding: _formPadding,
               footnote: "Invite people by the email of their Spideli account. They join when they accept.".tr,
-              children: [DsTextField(label: "Emails, separated by commas".tr, controller: _invites, keyboardType: TextInputType.emailAddress)],
+              children: [
+                DsTextField(
+                  label: "Emails, separated by commas".tr,
+                  controller: _invites,
+                  focusNode: _invitesFocus,
+                  keyboardType: TextInputType.emailAddress,
+                  helper: invitesError == null ? "A group goal has at most @max members, you included.".trParams({'max': '${cfg.maxMembers}'}) : null,
+                  errorText: invitesError,
+                  onChanged: (_) => setState(() {}),
+                ),
+              ],
             ),
         ],
       ),
@@ -402,38 +546,51 @@ class _SavingsGoalFormScreenState extends State<SavingsGoalFormScreen> {
   }
 }
 
-/// One savings goal: progress, projection, actions and history.
-class SavingsGoalScreen extends StatelessWidget {
+/// One savings goal: progress, projection, actions and history. A goal that
+/// no longer exists says so; a failed read offers Retry.
+class SavingsGoalScreen extends StatefulWidget {
   final String goalId;
 
   const SavingsGoalScreen({super.key, required this.goalId});
 
   @override
+  State<SavingsGoalScreen> createState() => _SavingsGoalScreenState();
+}
+
+class _SavingsGoalScreenState extends State<SavingsGoalScreen> {
+  late Stream<SavingsGoal?> _goal = FinanceGroupService.goal(widget.goalId);
+  late Stream<List<Map<String, dynamic>>> _contributions = FinanceGroupService.goalContributions(widget.goalId);
+
+  /// Read once; without it the goal still shows (wallet payments only).
+  late final Future<SavingsConfig?> _config = FinanceGroupService.savingsConfig().catchError((_) => null);
+
+  @override
   Widget build(BuildContext context) {
     return FutureBuilder<SavingsConfig?>(
-      future: FinanceGroupService.savingsConfig(),
+      future: _config,
       builder: (context, cfgSnap) => StreamBuilder<SavingsGoal?>(
-        stream: FinanceGroupService.goal(goalId),
+        stream: _goal,
         builder: (context, snap) {
           final g = snap.data;
+          final Widget? state = FinState.of(
+            snap,
+            gone: "This savings goal is no longer available.",
+            onRetry: () => setState(() => _goal = FinanceGroupService.goal(widget.goalId)),
+          );
           return FinScaffold(
             title: g?.name ?? "Savings goal".tr,
-            body: snap.hasError
-                ? FinBody(children: [FinState.error("Could not load this goal.".tr)])
-                : g == null
-                    ? FinBody(children: [FinState.loading(rows: 4)])
-                    : StreamBuilder<List<Map<String, dynamic>>>(
-                        stream: FinanceGroupService.goalContributions(goalId),
-                        builder: (context, cSnap) {
-                          final contributions = cSnap.data ?? const [];
-                          return _GoalBody(
-                            goal: g,
-                            config: cfgSnap.data,
-                            contributions: contributions,
-                            loadingContributions: !cSnap.hasData && !cSnap.hasError,
-                          );
-                        },
-                      ),
+            body: state != null || g == null
+                ? FinBody(children: [state ?? FinState.loading(rows: 4)])
+                : StreamBuilder<List<Map<String, dynamic>>>(
+                    stream: _contributions,
+                    builder: (context, cSnap) => _GoalBody(
+                      goal: g,
+                      config: cfgSnap.data,
+                      contributions: cSnap.data,
+                      contributionsFailed: cSnap.hasError,
+                      onRetryContributions: () => setState(() => _contributions = FinanceGroupService.goalContributions(widget.goalId)),
+                    ),
+                  ),
           );
         },
       ),
@@ -444,26 +601,36 @@ class SavingsGoalScreen extends StatelessWidget {
 class _GoalBody extends StatelessWidget {
   final SavingsGoal goal;
   final SavingsConfig? config;
-  final List<Map<String, dynamic>> contributions;
-  final bool loadingContributions;
 
-  const _GoalBody({required this.goal, required this.config, required this.contributions, this.loadingContributions = false});
+  /// Null until loaded (or when the read failed).
+  final List<Map<String, dynamic>>? contributions;
+  final bool contributionsFailed;
+  final VoidCallback onRetryContributions;
+
+  const _GoalBody({required this.goal, required this.config, required this.contributions, required this.contributionsFailed, required this.onRetryContributions});
 
   @override
   Widget build(BuildContext context) {
     final c = DsColors.of(context);
     final now = DateTime.now();
-    final received = contributions
+    final list = contributionsFailed ? null : contributions;
+    final String cur = goal.currency;
+    final bool isOwner = goal.ownerId == FinanceService.uid;
+    final methods = config?.paymentMethods ?? const ['wallet'];
+    // A schedule gives the pace by itself; otherwise it comes from the
+    // contributions, so there is no projection until they are read.
+    final bool scheduled = goal.frequency != null && goal.scheduleAmount > 0;
+    final bool canProject = scheduled || list != null;
+    final received = (list ?? const <Map<String, dynamic>>[])
         .where((x) => x['status'] == 'succeeded')
         .map((x) => DatedAmount(FinanceGroupService.toDate(x['createdAt']) ?? now, FinanceSummary.intOf(x['amount'])))
         .toList();
     final double rate = SavingsProjection.monthlyRate(goal, received, now);
-    final DateTime? projected = SavingsProjection.projectedCompletion(goal, rate, now);
-    final bool? onTrack = SavingsProjection.onTrack(goal, projected);
+    final DateTime? projected = canProject ? SavingsProjection.projectedCompletion(goal, rate, now) : null;
+    final bool? onTrack = canProject ? SavingsProjection.onTrack(goal, projected) : null;
     final int? needed = SavingsProjection.neededMonthly(goal, now);
-    final String cur = goal.currency;
-    final bool isOwner = goal.ownerId == FinanceService.uid;
-    final methods = config?.paymentMethods ?? const ['wallet'];
+    final bool showNeeded = needed != null && goal.remaining > 0;
+    final bool canEdit = goal.isActive && isOwner && config != null;
 
     return FinBody(
       children: [
@@ -475,49 +642,64 @@ class _GoalBody extends StatelessWidget {
         FinSection(
           title: "Plan".tr,
           divided: true,
+          actionLabel: canEdit ? "Edit".tr : null,
+          onAction: canEdit ? () => Get.to(() => SavingsGoalFormScreen(config: config!, goal: goal)) : null,
           children: [
+            if (goal.description.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: DsSpace.md),
+                child: Text(goal.description, style: DsTypography.body.copyWith(color: c.textPrimary)),
+              ),
             FinRow("Purpose".tr, GroupLabels.purpose(goal.purpose).tr),
             if (goal.deadline != null) FinRow("Deadline".tr, _date(goal.deadline)),
             FinRow("Schedule".tr, goal.frequency == null ? Frequency.label(null).tr : '${FinanceMoney.format(goal.scheduleAmount, cur)} · ${Frequency.label(goal.frequency).tr}'),
             if (goal.isGroup) FinRow("Members".tr, '${goal.memberIds.length}'),
           ],
         ),
-        FinSection(
-          title: "Projection".tr,
-          divided: true,
-          children: [
-            FinRow("Projected completion".tr, projected == null ? "Not enough savings yet to estimate".tr : _date(projected)),
-            if (needed != null && goal.remaining > 0) FinRow("Needed per month to meet the deadline".tr, FinanceMoney.format(needed, cur)),
-          ],
-        ),
+        if (canProject || showNeeded)
+          FinSection(
+            title: "Projection".tr,
+            divided: true,
+            children: [
+              if (canProject) FinRow("Projected completion".tr, projected == null ? "Not enough savings yet to estimate".tr : _date(projected)),
+              if (showNeeded) FinRow("Needed per month to meet the deadline".tr, FinanceMoney.format(needed, cur)),
+            ],
+          ),
         // The projection is an estimate, and says so.
         FinNotice(
           "Projections are estimates from your schedule or past contributions, not a guarantee.".tr,
           title: onTrack == null ? null : (onTrack ? "On track for your deadline." : "At this pace you will finish after your deadline.").tr,
           tone: onTrack == null ? DsTone.info : (onTrack ? DsTone.success : DsTone.warning),
         ),
-        if (loadingContributions)
+        if (contributionsFailed)
+          FinState.error("Could not load the contributions.".tr, onRetry: onRetryContributions)
+        else if (list == null)
           FinState.loading(rows: 2)
         else
           FinSection(
             title: "Contributions".tr,
             divided: true,
+            // The query reads the latest 50.
+            footnote: list.length >= 50 ? "Showing the latest 50 contributions.".tr : null,
             children: [
-              if (contributions.isEmpty) _quiet(context, "No contribution yet.".tr),
-              for (final x in contributions) _contribution(context, x),
+              if (list.isEmpty) _quiet(context, "No contribution yet.".tr),
+              for (final x in list) _contribution(context, x),
             ],
           ),
-        StreamBuilder<List<Map<String, dynamic>>>(
-          stream: FinanceGroupService.goalWithdrawals(goal.id),
-          builder: (context, snap) {
-            final list = snap.data ?? const [];
-            if (list.isEmpty) return const SizedBox.shrink();
-            return FinSection(
-              title: "Withdrawals".tr,
-              divided: true,
-              children: [for (final w in list) _withdrawal(context, w)],
-            );
-          },
+        FinReload(
+          builder: (context, retry) => StreamBuilder<List<Map<String, dynamic>>>(
+            stream: FinanceGroupService.goalWithdrawals(goal.id),
+            builder: (context, snap) {
+              if (snap.hasError) return FinState.error("Could not load the withdrawals.".tr, onRetry: retry);
+              final list = snap.data ?? const [];
+              if (list.isEmpty) return const SizedBox.shrink();
+              return FinSection(
+                title: "Withdrawals".tr,
+                divided: true,
+                children: [for (final w in list) _withdrawal(context, w)],
+              );
+            },
+          ),
         ),
         if (goal.isActive && isOwner)
           Padding(
@@ -527,19 +709,84 @@ class _GoalBody extends StatelessWidget {
               icon: Icons.close_rounded,
               expand: true,
               color: c.danger,
-              onPressed: () async {
-                final ok = await finConfirm(
-                  title: "Cancel this goal?".tr,
-                  message: "The money saved is returned according to the withdrawal rules. This cannot be undone.".tr,
-                  lines: [("Saved so far".tr, FinanceMoney.format(goal.savedAmount, cur))],
-                  confirmLabel: "Cancel goal".tr,
-                  destructive: true,
-                );
-                if (ok) await FinanceUi.run(() => FinanceGroupService.cancelGoal(goal.id), success: "Goal cancelled");
-              },
+              onPressed: () => _cancel(),
             ),
           ),
       ],
+    );
+  }
+
+  /// Cancelling closes the goal for everyone: say what is saved and what happens to it.
+  Future<void> _cancel() async {
+    final g = goal;
+    final String saved = FinanceMoney.format(g.savedAmount, g.currency);
+    final ok = await finConfirm(
+      title: "Cancel this goal?".tr,
+      message: (g.isGroup
+              ? "The goal closes for all its members and nobody can add money to it any more. The @amount saved is returned according to the withdrawal rules. This cannot be undone."
+              : "Nobody can add money to this goal any more. The @amount saved is returned according to the withdrawal rules. This cannot be undone.")
+          .trParams({'amount': saved}),
+      lines: [
+        ("Saved so far".tr, saved),
+        ("Target amount".tr, FinanceMoney.format(g.targetAmount, g.currency)),
+        if (g.isGroup) ("Members".tr, '${g.memberIds.length}'),
+      ],
+      confirmLabel: "Cancel goal".tr,
+      destructive: true,
+    );
+    if (ok) await FinanceUi.run(() => FinanceGroupService.cancelGoal(g.id), success: "Goal cancelled");
+  }
+
+  Future<void> _addMoney(BuildContext context, List<String> methods) async {
+    final g = goal;
+    final amount = await askAmount(context, title: "Add money".tr, currency: g.currency);
+    if (amount == null || !context.mounted) return;
+    await FinancePaySheet.show(
+      context,
+      title: "${"Add money to".tr} ${g.name}",
+      amount: amount,
+      currency: g.currency,
+      methods: methods,
+      submit: (payment) => FinanceRequestKeys.send('savings.contribute', g.id, amount, payment, (key) => FinanceGroupService.contributeToGoal(g.id, amount, payment, key)),
+    );
+  }
+
+  Future<void> _withdraw(BuildContext context, List<String> methods) async {
+    final g = goal;
+    final String cur = g.currency;
+    // Before the target is reached the withdrawal is early: say what it changes.
+    if (g.remaining > 0) {
+      final now = DateTime.now();
+      final bool ok = await finConfirm(
+        title: "Withdraw before reaching the target?".tr,
+        message: "This goal has not reached its target yet. Money you withdraw no longer counts toward it.".tr,
+        lines: [
+          ("Saved so far".tr, FinanceMoney.format(g.savedAmount, cur)),
+          ("Target amount".tr, FinanceMoney.format(g.targetAmount, cur)),
+          if (g.deadline != null && g.deadline!.isAfter(now)) ("Deadline".tr, _date(g.deadline)),
+        ],
+        confirmLabel: "Continue".tr,
+      );
+      if (!ok || !context.mounted) return;
+    }
+    // The goal's balance is the server's upper limit; in a group the server
+    // also applies the group's rules, which the goal does not expose.
+    final amount = await askAmount(
+      context,
+      title: "Withdraw".tr,
+      currency: cur,
+      max: g.savedAmount,
+      hint: g.isGroup ? '${"At most".tr} ${FinanceMoney.format(g.savedAmount, cur)}. ${"Group rules decide how much each member may withdraw.".tr}' : null,
+    );
+    if (amount == null || !context.mounted) return;
+    await FinancePaySheet.show(
+      context,
+      title: "Withdraw to".tr,
+      amount: amount,
+      currency: cur,
+      methods: methods,
+      submit: (destination) => FinanceRequestKeys.send('savings.withdraw', g.id, amount, destination, (key) => FinanceGroupService.requestWithdrawal(g.id, amount, destination, key)),
+      payout: true,
     );
   }
 
@@ -549,46 +796,9 @@ class _GoalBody extends StatelessWidget {
     final String cur = g.currency;
     final actions = <FinAction>[
       if (g.isActive) ...[
-        FinAction(
-          Icons.add_rounded,
-          "Add money".tr,
-          !verified
-              ? null
-              : () async {
-                  final amount = await askAmount(context, title: "Add money".tr, currency: cur);
-                  if (amount == null || !context.mounted) return;
-                  final key = FinanceGroupService.newRequestKey();
-                  await FinancePaySheet.show(
-                    context,
-                    title: "${"Add money to".tr} ${g.name}",
-                    amount: amount,
-                    currency: cur,
-                    methods: methods,
-                    submit: (payment) => FinanceGroupService.contributeToGoal(g.id, amount, payment, key),
-                  );
-                },
-        ),
+        FinAction(Icons.add_rounded, "Add money".tr, !verified ? null : () => _addMoney(context, methods)),
         if (g.savedAmount > 0 && (config?.earlyWithdrawal == true || g.remaining == 0))
-          FinAction(
-            Icons.south_west_rounded,
-            "Withdraw".tr,
-            !verified
-                ? null
-                : () async {
-                    final amount = await askAmount(context, title: "Withdraw".tr, currency: cur, max: g.savedAmount);
-                    if (amount == null || !context.mounted) return;
-                    final key = FinanceGroupService.newRequestKey();
-                    await FinancePaySheet.show(
-                      context,
-                      title: "Withdraw to".tr,
-                      amount: amount,
-                      currency: cur,
-                      methods: methods,
-                      submit: (destination) => FinanceGroupService.requestWithdrawal(g.id, amount, destination, key),
-                      payout: true,
-                    );
-                  },
-          ),
+          FinAction(Icons.south_west_rounded, "Withdraw".tr, !verified ? null : () => _withdraw(context, methods)),
         if (isOwner && config?.groupGoals == true)
           FinAction(Icons.person_add_alt_outlined, "Invite".tr, () async {
             final email = await _askEmail(context);
@@ -604,22 +814,34 @@ class _GoalBody extends StatelessWidget {
       footer: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _HeroProgress(value: g.progress),
+          _HeroProgress(value: g.progress, label: "Progress toward the target".tr),
           if (actions.isNotEmpty) ...[const DsGap(DsSpace.lg), FinActions(onHero: true, actions: actions)],
         ],
       ),
     );
   }
 
+  /// Who made a contribution of a group goal (contributions carry the
+  /// member's id only).
+  String _who(String? userId) {
+    if (userId == FinanceService.uid) return "You".tr;
+    if (userId == goal.ownerId) return "Goal owner".tr;
+    return "A member".tr;
+  }
+
   Widget _contribution(BuildContext context, Map<String, dynamic> x) {
     final String status = x['status']?.toString() ?? '';
     final int amount = FinanceSummary.intOf(x['amount']);
     final String reference = (x['reference'] ?? '').toString();
+    final String subtitle = [
+      if (goal.isGroup) _who(x['userId']?.toString()),
+      if (reference.isNotEmpty) ltrRef(reference),
+    ].join(' · ');
     return FinListTile(
       icon: Icons.south_west_rounded,
       iconTone: status == 'succeeded' ? DsTone.success : (status == 'failed' ? DsTone.danger : DsTone.neutral),
       title: FinanceUi.date(x['createdAt']),
-      subtitle: reference.isEmpty ? null : ltrRef(reference),
+      subtitle: subtitle.isEmpty ? null : subtitle,
       amount: FinanceMoney.signed(amount, x['currency']?.toString() ?? goal.currency),
       // Money in once received; a failed or refunded one is shown muted.
       amountColor: switch (status) {
@@ -647,24 +869,48 @@ class _GoalBody extends StatelessWidget {
   }
 }
 
-Future<String?> _askEmail(BuildContext context) {
-  final ctrl = TextEditingController();
-  return finSheet<String>(
-    title: "Invite by email".tr,
-    child: StatefulBuilder(
-      builder: (context, setState) {
-        final ok = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(ctrl.text.trim());
-        return Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            DsTextField(label: "Email of their Spideli account".tr, controller: ctrl, autofocus: true, keyboardType: TextInputType.emailAddress, onChanged: (_) => setState(() {})),
-            DsButton.primary(label: "Send invitation".tr, icon: Icons.send_rounded, expand: true, onPressed: ok ? () => Get.back(result: ctrl.text.trim().toLowerCase()) : null),
-          ],
-        );
-      },
-    ),
-  );
+Future<String?> _askEmail(BuildContext context) => finSheet<String>(title: "Invite by email".tr, child: const _EmailSheet());
+
+/// The address of one person to invite; says what is wrong with it as it is
+/// typed. Owns (and disposes) its field.
+class _EmailSheet extends StatefulWidget {
+  const _EmailSheet();
+
+  @override
+  State<_EmailSheet> createState() => _EmailSheetState();
+}
+
+class _EmailSheetState extends State<_EmailSheet> {
+  final _ctrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final String email = _ctrl.text.trim();
+    final bool ok = _emailOk(email);
+    // An address in progress is not an error yet: only once it has an "@" and a dot after it.
+    final bool judged = email.contains('@') && email.split('@').last.contains('.');
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        DsTextField(
+          label: "Email of their Spideli account".tr,
+          controller: _ctrl,
+          autofocus: true,
+          keyboardType: TextInputType.emailAddress,
+          errorText: judged && !ok ? "This email address is not valid: @email".trParams({'email': email}) : null,
+          onChanged: (_) => setState(() {}),
+        ),
+        DsButton.primary(label: "Send invitation".tr, icon: Icons.send_rounded, expand: true, onPressed: ok ? () => Get.back(result: email.toLowerCase()) : null),
+      ],
+    );
+  }
 }
 
 /// Shared with the tontine screens.

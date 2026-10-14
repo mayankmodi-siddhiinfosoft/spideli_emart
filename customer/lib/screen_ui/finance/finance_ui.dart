@@ -28,16 +28,22 @@ abstract final class FinanceUi {
   /// A Firestore timestamp as a DateTime, or null.
   static DateTime? toDate(dynamic value) => value is Timestamp ? value.toDate() : null;
 
+  /// Date and time: "05 Oct 2026, 14:30", from a Timestamp or a DateTime.
   static String date(dynamic value) {
-    if (value is! Timestamp) return '-';
-    return ltr(DateFormat('dd MMM yyyy, HH:mm').format(value.toDate()));
+    final DateTime? d = value is DateTime ? value : toDate(value);
+    if (d == null) return '-';
+    return ltr(DateFormat('dd MMM yyyy, HH:mm').format(d));
   }
 
-  /// The day only: "05 Oct 2026".
+  /// The day only: "05 Oct 2026", from a Timestamp or a DateTime.
   static String day(dynamic value) {
-    if (value is! Timestamp) return '-';
-    return ltr(DateFormat('dd MMM yyyy').format(value.toDate()));
+    final DateTime? d = value is DateTime ? value : toDate(value);
+    if (d == null) return '-';
+    return ltr(DateFormat('dd MMM yyyy').format(d));
   }
+
+  /// "1 day", "3 days": [n] with the singular or plural key.
+  static String count(num n, String one, String many) => '$n ${(n == 1 ? one : many).tr}';
 
   /// Runs [action] behind the loader; a server refusal becomes its translated message.
   static Future<bool> run(Future<void> Function() action, {String? success}) async {

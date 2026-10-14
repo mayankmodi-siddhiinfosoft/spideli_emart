@@ -14,15 +14,12 @@ import 'package:customer/utils/finance_rules.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
+import 'package:intl/intl.dart' show DateFormat;
 import 'package:url_launcher/url_launcher.dart';
 
-/// Sheets open in their own route, outside [FinScaffold]: pin the finance accent there too.
-Widget _finAccent(Widget child) => Builder(
-      builder: (context) => DsAccentScope(color: Theme.of(context).brightness == Brightness.dark ? FinColors.navyDark : FinColors.navy, child: child),
-    );
-
-/// Padding of a form section: fields carry their own bottom spacing.
-const EdgeInsets _form = EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.lg, DsSpace.lg, DsSpace.xs);
+/// Padding of a form section: fields carry their own bottom spacing (as
+/// the transfer and bill forms).
+const EdgeInsets _form = EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.lg, DsSpace.lg, 0);
 
 /// "2 %", "1.5 %": no trailing ".0", left-to-right inside Arabic text.
 String _percent(double v) => ltr('${v == v.roundToDouble() ? v.round() : v} %');
@@ -33,8 +30,9 @@ class CardFace extends StatelessWidget {
 
   const CardFace({super.key, required this.card});
 
-  /// A card that cannot pay (being created, frozen, ended) is greyed.
-  static const Color _greyLight = Color(0xFF6B7585);
+  /// A card that cannot pay (being created, frozen, ended) is greyed: dark
+  /// enough for white text, and its status badge, at 4.5:1 or more.
+  static const Color _greyLight = Color(0xFF4A5363);
   static const Color _greyDark = Color(0xFF2C3544);
 
   @override
@@ -97,7 +95,8 @@ class CardFace extends StatelessWidget {
                       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                         Text(card.cardholderName.toUpperCase(), style: DsTypography.label.copyWith(color: white, letterSpacing: 0.6), maxLines: 1, overflow: TextOverflow.ellipsis),
                         const DsGap(DsSpace.xxs),
-                        Text('${"Valid thru".tr} ${ltr(card.expiry)}', style: DsTypography.caption.copyWith(color: muted).tabular),
+                        // Full white on a greyed card: the muted tone would fall under 4.5:1.
+                        Text('${"Valid thru".tr} ${ltr(card.expiry)}', style: DsTypography.caption.copyWith(color: dim ? white : muted).tabular),
                       ]),
                     ),
                     const DsGap(DsSpace.md),
@@ -119,19 +118,13 @@ class CardsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<CardConfig?>(
-      future: FinanceCardService.config(),
-      builder: (context, cfgSnap) {
-        final cfg = cfgSnap.data;
-        if (cfgSnap.connectionState == ConnectionState.waiting || cfg == null) {
-          return FinScaffold(
-            title: "Virtual card".tr,
-            body: FinBody(children: [
-              cfg == null && cfgSnap.connectionState != ConnectionState.waiting
-                  ? FinState.empty(Icons.credit_card_outlined, "Virtual cards are not available yet.".tr)
-                  : FinState.loading(rows: 2),
-            ]),
-          );
+    return FinConfig<CardConfig>(
+      load: FinanceCardService.config,
+      builder: (context, st) {
+        final cfg = st.config;
+        final placeholder = st.placeholder(Icons.credit_card_outlined, "Virtual cards are not available yet.".tr);
+        if (placeholder != null || cfg == null) {
+          return FinScaffold(title: "Virtual card".tr, body: FinBody(children: [placeholder ?? FinState.loading(rows: 2)]));
         }
         return StreamBuilder<List<VirtualCard>>(
           stream: FinanceCardService.cards(),
@@ -256,10 +249,20 @@ class _CardCreateScreenState extends State<CardCreateScreen> {
   Future<void> _create() async {
     final cfg = widget.config;
     final int fee = cfg.feeFor(cfg.issuanceFee, _currency);
-    final key = FinanceGroupService.newRequestKey();
+    final String label = _label.text.trim();
     bool sent = false;
+    // One key per card asked for (currency, terms, name) and payment
+    // method, reused on a retry until the server accepts it.
     Future<Map<String, dynamic>> submit(Map<String, dynamic>? payment) async {
-      final r = await FinanceCardService.create(label: _label.text.trim(), currency: _currency, termsVersion: cfg.termsVersion, payment: payment, requestKey: key);
+      final String intent = FinanceRequestKeys.intentOf('card.create', '$_currency:${cfg.termsVersion}:$label', fee, payment ?? const {});
+      final r = await FinanceCardService.create(
+        label: label,
+        currency: _currency,
+        termsVersion: cfg.termsVersion,
+        payment: payment,
+        requestKey: FinanceRequestKeys.of(intent),
+      );
+      FinanceRequestKeys.done(intent);
       sent = true;
       return r;
     }
@@ -270,6 +273,17 @@ class _CardCreateScreenState extends State<CardCreateScreen> {
       await FinanceUi.run(() => submit(null), success: "Your card is being created.");
     }
     if (sent && mounted) Get.back();
+  }
+
+  /// The card terms in a sheet: read in full, without a box scrolling
+  /// inside the page.
+  void _readTerms() {
+    final cfg = widget.config;
+    finSheet(
+      title: "Card terms".tr,
+      subtitle: '${"Version".tr} ${ltr('${cfg.termsVersion}')}',
+      child: Builder(builder: (context) => Text(cfg.terms, style: DsTypography.body.copyWith(color: DsColors.of(context).textPrimary))),
+    );
   }
 
   @override
@@ -291,12 +305,19 @@ class _CardCreateScreenState extends State<CardCreateScreen> {
       title: "Get a virtual card".tr,
       bottomBar: DsStickyBar(
         child: FinanceKycGate(
-          builder: (context, verified) => DsButton.primary(
-            label: cfg.feeFor(cfg.issuanceFee, _currency) > 0 ? "${"Create my card".tr} · ${fee(cfg.issuanceFee)}" : "Create my card".tr,
-            icon: Icons.add_card_rounded,
-            size: DsButtonSize.lg,
-            expand: true,
-            onPressed: verified && _accepted ? _create : null,
+          builder: (context, verified) => Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              FinMissing([if (!_accepted) "Accept the card terms".tr]),
+              DsButton.primary(
+                label: cfg.feeFor(cfg.issuanceFee, _currency) > 0 ? "${"Create my card".tr} · ${fee(cfg.issuanceFee)}" : "Create my card".tr,
+                icon: Icons.add_card_rounded,
+                size: DsButtonSize.lg,
+                expand: true,
+                onPressed: verified && _accepted ? _create : null,
+              ),
+            ],
           ),
         ),
       ),
@@ -346,17 +367,12 @@ class _CardCreateScreenState extends State<CardCreateScreen> {
             padding: const EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.lg, DsSpace.lg, DsSpace.sm),
             children: [
               Text('${"Version".tr} ${ltr('${cfg.termsVersion}')}', style: DsTypography.caption.copyWith(color: c.textSecondary)),
-              const DsGap(DsSpace.sm),
-              Container(
-                constraints: const BoxConstraints(maxHeight: 220),
-                decoration: BoxDecoration(color: c.isDark ? c.surfaceAlt : FinColors.page(context), borderRadius: DsRadius.brSm, border: Border.all(color: c.border)),
-                child: Scrollbar(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.all(DsSpace.md),
-                    child: Text(cfg.terms, style: DsTypography.bodySm.copyWith(color: c.textPrimary)),
-                  ),
+              // The terms open in a sheet; no empty box when there are none.
+              if (cfg.terms.isNotEmpty)
+                Align(
+                  alignment: AlignmentDirectional.centerStart,
+                  child: DsButton.ghost(label: "Read the terms".tr, icon: Icons.description_outlined, size: DsButtonSize.sm, onPressed: _readTerms),
                 ),
-              ),
               const DsGap(DsSpace.xs),
               CheckboxListTile(
                 contentPadding: EdgeInsets.zero,
@@ -376,29 +392,60 @@ class _CardCreateScreenState extends State<CardCreateScreen> {
 // --------------------------------------------------------------------- card
 
 /// One card: balance, top-ups, freeze, details, limits, renewal, history.
-class CardScreen extends StatelessWidget {
+class CardScreen extends StatefulWidget {
   final String cardId;
   final CardConfig config;
 
   const CardScreen({super.key, required this.cardId, required this.config});
 
   @override
+  State<CardScreen> createState() => _CardScreenState();
+}
+
+class _CardScreenState extends State<CardScreen> {
+  late Stream<VirtualCard?> _stream = FinanceCardService.card(widget.cardId);
+
+  @override
   Widget build(BuildContext context) {
     return StreamBuilder<VirtualCard?>(
-      stream: FinanceCardService.card(cardId),
+      stream: _stream,
       builder: (context, snap) {
         final c = snap.data;
+        final state = FinState.of(
+          snap,
+          gone: "This card is no longer available.",
+          onRetry: () => setState(() => _stream = FinanceCardService.card(widget.cardId)),
+        );
         return FinScaffold(
           title: c == null || c.label.isEmpty ? "Virtual card".tr : c.label,
-          body: snap.hasError
-              ? FinBody(children: [FinState.error("Could not load this card.".tr)])
-              : c == null
-                  ? FinBody(children: [FinState.loading(rows: 4)])
-                  : _CardBody(card: c, config: config),
+          body: state != null ? FinBody(children: [state]) : _CardBody(card: c!, config: widget.config),
         );
       },
     );
   }
+}
+
+/// Asks for a top-up between [min] and [max]: a wrong amount is explained
+/// in the sheet as it is typed, and the amount stays there to correct.
+Future<int?> _askTopUp({required String currency, required int min, int? max}) {
+  final ctrl = TextEditingController();
+  return finSheet<int>(
+    title: "Top up the card".tr,
+    child: StatefulBuilder(
+      builder: (context, setState) {
+        final int? value = FinanceAmount.parse(ctrl.text, currency);
+        final bool ok = value != null && FinanceAmount.problem(ctrl.text, currency, min: min, max: max) == null;
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            FinAmountField(label: "Amount".tr, controller: ctrl, currency: currency, min: min, max: max, onChanged: (_) => setState(() {})),
+            DsButton.primary(label: "Continue".tr, expand: true, onPressed: ok ? () => Get.back(result: value) : null),
+          ],
+        );
+      },
+    ),
+  );
 }
 
 class _CardBody extends StatelessWidget {
@@ -411,9 +458,8 @@ class _CardBody extends StatelessWidget {
     final c = card;
     final int? max = config.maxFunding[c.currency];
     final int min = config.minFunding[c.currency] ?? 1;
-    final amount = await askAmount(context, title: "Top up the card".tr, currency: c.currency, max: max, hint: '${"Minimum".tr} ${FinanceMoney.format(min, c.currency)}');
+    final amount = await _askTopUp(currency: c.currency, min: min, max: max);
     if (amount == null || !context.mounted) return;
-    if (amount < min) return ShowToastDialog.showToast('${"Minimum".tr}: ${FinanceMoney.format(min, c.currency)}');
     final q = FundingQuote.of(amount, config.fundingFeePercent);
     if (q.fee > 0) {
       final ok = await finConfirm(
@@ -427,15 +473,30 @@ class _CardBody extends StatelessWidget {
       );
       if (!ok || !context.mounted) return;
     }
-    final key = FinanceGroupService.newRequestKey();
-    await FinancePaySheet.show(context, title: "Top up the card".tr, amount: q.total, currency: c.currency, methods: config.fundingMethods, submit: (p) => FinanceCardService.fund(c.id, amount, p, key));
+    await FinancePaySheet.show(
+      context,
+      title: "Top up the card".tr,
+      amount: q.total,
+      currency: c.currency,
+      methods: config.fundingMethods,
+      submit: (p) => _once('card.fund', amount, p, (key) => FinanceCardService.fund(c.id, amount, p, key)),
+    );
+  }
+
+  /// Runs a money request of this card with ONE idempotency key per
+  /// [action], amount and payment method, reused on a retry until the
+  /// server accepts it.
+  Future<Map<String, dynamic>> _once(String action, int amount, Map<String, dynamic>? payment, Future<Map<String, dynamic>> Function(String key) send) async {
+    final String intent = FinanceRequestKeys.intentOf(action, card.id, amount, payment ?? const {});
+    final reply = await send(FinanceRequestKeys.of(intent));
+    FinanceRequestKeys.done(intent);
+    return reply;
   }
 
   Future<void> _withdraw(BuildContext context) async {
     final c = card;
     final amount = await askAmount(context, title: "Move to my wallet".tr, currency: c.currency, max: c.balance);
     if (amount == null || !context.mounted || !await FinanceReauth.confirm() || !context.mounted) return;
-    final key = FinanceGroupService.newRequestKey();
     await FinancePaySheet.show(
       context,
       title: "Move to my wallet".tr,
@@ -443,7 +504,7 @@ class _CardBody extends StatelessWidget {
       currency: c.currency,
       methods: config.fundingMethods,
       payout: true,
-      submit: (d) => FinanceCardService.withdraw(c.id, amount, d, key),
+      submit: (d) => _once('card.withdraw', amount, d, (key) => FinanceCardService.withdraw(c.id, amount, d, key)),
     );
   }
 
@@ -467,18 +528,33 @@ class _CardBody extends StatelessWidget {
     Map<String, dynamic>? details;
     final ok = await FinanceUi.run(() async => details = await FinanceCardService.revealDetails(card.id));
     if (!ok || details == null || !context.mounted) return;
-    await finSheet(title: "Card details".tr, child: _finAccent(_SecretDetails(details: details!, card: card)));
+    await finSheet(title: "Card details".tr, child: _SecretDetails(details: details!, card: card));
   }
 
   Future<void> _renew(BuildContext context) async {
     final c = card;
     final int fee = config.feeFor(config.renewalFee, c.currency);
-    final key = FinanceGroupService.newRequestKey();
     if (fee > 0) {
-      await FinancePaySheet.show(context, title: "Renew the card".tr, amount: fee, currency: c.currency, methods: config.fundingMethods, submit: (p) => FinanceCardService.renew(c.id, p, key));
-    } else {
-      await FinanceUi.run(() => FinanceCardService.renew(c.id, null, key), success: "Renewal requested");
+      await FinancePaySheet.show(
+        context,
+        title: "Renew the card".tr,
+        amount: fee,
+        currency: c.currency,
+        methods: config.fundingMethods,
+        submit: (p) => _once('card.renew', fee, p, (key) => FinanceCardService.renew(c.id, p, key)),
+      );
+      return;
     }
+    // A free renewal has no payment step: confirm it here.
+    final ok = await finConfirm(
+      title: "Renew the card?".tr,
+      message: "The issuer prepares the renewed card. This page updates when it is ready.".tr,
+      lines: [("Renewal fee".tr, "Free".tr)],
+      confirmLabel: "Renew".tr,
+      cancelLabel: "Not now".tr,
+    );
+    if (!ok) return;
+    await FinanceUi.run(() => _once('card.renew', 0, null, (key) => FinanceCardService.renew(c.id, null, key)), success: "Renewal requested");
   }
 
   Future<void> _terminate() async {
@@ -534,10 +610,12 @@ class _CardBody extends StatelessWidget {
               ),
               if (anyAction) ...[
                 const DsGap(DsSpace.lg),
+                // Short labels, three to a row on a phone: whole words in
+                // every language and at large text sizes.
                 FinanceKycGate(
                   builder: (context, verified) => FinActions(actions: [
                     if (CardActions.canFund(c)) FinAction(Icons.add_rounded, "Top up".tr, verified ? () => _fund(context) : null),
-                    if (CardActions.canRevealDetails(c, cfg)) FinAction(Icons.visibility_outlined, "Show details".tr, () => _details(context)),
+                    if (CardActions.canRevealDetails(c, cfg)) FinAction(Icons.visibility_outlined, "Details".tr, () => _details(context)),
                     if (CardActions.canFreeze(c))
                       FinAction(Icons.ac_unit_rounded, "Freeze".tr, () => FinanceUi.run(() => FinanceCardService.freeze(c.id), success: "Card frozen")),
                     if (CardActions.canUnfreeze(c))
@@ -545,7 +623,7 @@ class _CardBody extends StatelessWidget {
                         if (await FinanceReauth.confirm()) await FinanceUi.run(() => FinanceCardService.unfreeze(c.id), success: "Card unfrozen");
                       }),
                     if (CardActions.canSetLimits(c)) FinAction(Icons.tune_rounded, "Limits".tr, () => Get.to(() => CardLimitsScreen(card: c, config: cfg))),
-                    if (CardActions.canWithdraw(c, cfg)) FinAction(Icons.south_west_rounded, "Move to my wallet".tr, verified ? () => _withdraw(context) : null),
+                    if (CardActions.canWithdraw(c, cfg)) FinAction(Icons.south_west_rounded, "To wallet".tr, verified ? () => _withdraw(context) : null),
                   ]),
                 ),
               ],
@@ -565,8 +643,49 @@ class _CardBody extends StatelessWidget {
             actionLabel: "Renew".tr,
             onAction: () => _renew(context),
           ),
+        _CardActivity(card: c, onTopUp: CardActions.canFund(c) ? () => _fund(context) : null),
+        if (CardActions.canTerminate(c))
+          Padding(
+            padding: const EdgeInsets.only(top: FinSpace.section),
+            child: DsButton.ghost(label: "Delete this card".tr, icon: Icons.delete_outline_rounded, color: colors.dangerStrong, expand: true, onPressed: _terminate),
+          ),
+      ],
+    );
+  }
+}
+/// Top-ups in progress, then the card's transactions grouped by day (as the
+/// wallet). Read once per card, not again each time the card changes.
+class _CardActivity extends StatefulWidget {
+  final VirtualCard card;
+  final VoidCallback? onTopUp;
+
+  const _CardActivity({required this.card, required this.onTopUp});
+
+  @override
+  State<_CardActivity> createState() => _CardActivityState();
+}
+
+class _CardActivityState extends State<_CardActivity> {
+  late final Stream<List<Map<String, dynamic>>> _requests = FinanceCardService.fundingRequests(widget.card.id);
+  late Stream<List<Map<String, dynamic>>> _transactions = FinanceCardService.transactions(widget.card.id);
+
+  static String _dayLabel(DateTime d) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final day = DateTime(d.year, d.month, d.day);
+    if (day == today) return "Today".tr;
+    if (day == today.subtract(const Duration(days: 1))) return "Yesterday".tr;
+    return ltr(DateFormat('dd MMM yyyy').format(d));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = widget.card;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
         StreamBuilder<List<Map<String, dynamic>>>(
-          stream: FinanceCardService.fundingRequests(c.id),
+          stream: _requests,
           builder: (context, snap) {
             final pending = (snap.data ?? const []).where((r) => r['status'] == 'pending' || r['status'] == 'processing').toList();
             if (pending.isEmpty) return const SizedBox.shrink();
@@ -589,25 +708,66 @@ class _CardBody extends StatelessWidget {
           },
         ),
         StreamBuilder<List<Map<String, dynamic>>>(
-          stream: FinanceCardService.transactions(c.id),
+          stream: _transactions,
           builder: (context, snap) {
-            if (snap.hasError) return FinState.error("Could not load the card transactions.".tr);
+            if (snap.hasError) {
+              return FinState.error(
+                "Could not load the card transactions.".tr,
+                onRetry: () => setState(() => _transactions = FinanceCardService.transactions(c.id)),
+              );
+            }
             if (!snap.hasData) return FinState.loading();
             final list = snap.data!;
-            if (list.isEmpty) return FinState.empty(Icons.receipt_long_outlined, "No transaction yet.".tr);
-            return FinSection(
-              title: "Transactions".tr,
-              divided: true,
-              children: [for (final t in list) _TransactionTile(t: t, currency: c.currency)],
+            if (list.isEmpty) {
+              return _NoTransaction(onTopUp: widget.onTopUp);
+            }
+            // One section per day, newest first (the list is).
+            final sections = <(String, List<Map<String, dynamic>>)>[];
+            for (final t in list) {
+              final d = FinanceGroupService.toDate(t['createdAt']);
+              final String label = d == null ? '-' : _dayLabel(d);
+              if (sections.isEmpty || sections.last.$1 != label) sections.add((label, []));
+              sections.last.$2.add(t);
+            }
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (final (i, (label, items)) in sections.indexed)
+                  FinSection(
+                    title: i == 0 ? '${"Transactions".tr} · $label' : label,
+                    top: i == 0 ? FinSpace.section : DsSpace.xl,
+                    divided: true,
+                    children: [for (final t in items) _TransactionTile(t: t, currency: c.currency, timeOnly: true)],
+                  ),
+              ],
             );
           },
         ),
-        if (CardActions.canTerminate(c))
-          Padding(
-            padding: const EdgeInsets.only(top: FinSpace.section),
-            child: DsButton.ghost(label: "Delete this card".tr, icon: Icons.delete_outline_rounded, color: colors.dangerStrong, expand: true, onPressed: _terminate),
-          ),
       ],
+    );
+  }
+}
+
+/// No transaction yet: the next step is a top-up (when the card can take
+/// one and the identity is verified).
+class _NoTransaction extends StatelessWidget {
+  final VoidCallback? onTopUp;
+
+  const _NoTransaction({required this.onTopUp});
+
+  @override
+  Widget build(BuildContext context) {
+    Widget empty(bool canTopUp) => FinState.empty(
+          Icons.receipt_long_outlined,
+          "No transaction yet.".tr,
+          message: canTopUp ? "Top up the card to start paying with it.".tr : null,
+          actionLabel: canTopUp ? "Top up".tr : null,
+          onAction: canTopUp ? onTopUp : null,
+        );
+    if (onTopUp == null) return empty(false);
+    return StreamBuilder<Map<String, dynamic>>(
+      stream: FinanceService.myProfile(),
+      builder: (context, snap) => empty((snap.data?['kycLevel']?.toString() ?? '').isNotEmpty),
     );
   }
 }
@@ -616,7 +776,10 @@ class _TransactionTile extends StatelessWidget {
   final Map<String, dynamic> t;
   final String currency;
 
-  const _TransactionTile({required this.t, required this.currency});
+  /// Under a day's title: the time only.
+  final bool timeOnly;
+
+  const _TransactionTile({required this.t, required this.currency, this.timeOnly = false});
 
   @override
   Widget build(BuildContext context) {
@@ -629,12 +792,13 @@ class _TransactionTile extends StatelessWidget {
     final String? original = t['originalCurrency'] != null && t['originalCurrency'] != currency
         ? FinanceMoney.format(FinanceSummary.intOf(t['originalAmount']), t['originalCurrency'].toString())
         : null;
+    final DateTime? at = FinanceGroupService.toDate(t['createdAt']);
     return FinListTile(
       icon: credit ? Icons.south_west_rounded : Icons.shopping_bag_outlined,
       iconTone: status == 'declined' ? DsTone.danger : (credit ? DsTone.success : DsTone.neutral),
       title: (t['merchantName'] ?? '').toString().isNotEmpty ? t['merchantName'].toString() : CardLabels.transaction(type).tr,
       subtitle: [
-        FinanceUi.date(t['createdAt']),
+        timeOnly && at != null ? ltr(DateFormat('HH:mm').format(at)) : FinanceUi.date(t['createdAt']),
         ?original,
         if ((t['declineReason'] ?? '').toString().isNotEmpty) t['declineReason'].toString(),
       ].join(' · '),
@@ -783,6 +947,7 @@ class _CardLimitsScreenState extends State<CardLimitsScreen> {
   final _tx = TextEditingController();
   final _day = TextEditingController();
   final _month = TextEditingController();
+  late Stream<Map<String, dynamic>?> _stream = FinanceCardService.limits(widget.card.id);
   bool? _online;
   bool? _international;
   bool _loaded = false;
@@ -802,17 +967,28 @@ class _CardLimitsScreenState extends State<CardLimitsScreen> {
 
   CardLimits get _limits => CardLimits(perTransaction: _value(_tx), daily: _value(_day), monthly: _value(_month));
 
+  /// The saved settings, once: the fields in major units for any currency.
+  /// Only a real answer loads them - never a failed read, which would show
+  /// (and could save) the defaults instead of the user's choices.
   void _load(Map<String, dynamic>? l) {
     if (_loaded) return;
     _loaded = true;
-    String text(dynamic v) => v is num && v > 0 ? '${v.round()}' : '';
-    if (FinanceMoney.exponent(_cur) == 0) {
-      _tx.text = text(l?['perTransaction']);
-      _day.text = text(l?['daily']);
-      _month.text = text(l?['monthly']);
-    }
+    String text(dynamic v) => v is num && v > 0 ? FinanceAmount.input(v, _cur) : '';
+    _tx.text = text(l?['perTransaction']);
+    _day.text = text(l?['daily']);
+    _month.text = text(l?['monthly']);
     _online = l?['allowOnline'] is bool ? l!['allowOnline'] as bool : true;
     _international = l?['allowInternational'] is bool ? l!['allowInternational'] as bool : true;
+  }
+
+  /// What is wrong with one limit beyond what its field explains itself (a
+  /// wrong amount, above the maximum): zero, or the rule of [problem] when
+  /// it is about this field ([own]).
+  String? _fieldError(TextEditingController ctrl, String? problem, String? own) {
+    final String t = ctrl.text.trim();
+    if (t.isEmpty) return null;
+    if (RegExp(r'^[0\s.,]+$').hasMatch(t)) return "Limits must be more than zero.".tr;
+    return problem != null && problem == own ? problem.tr : null;
   }
 
   Future<void> _save() async {
@@ -834,19 +1010,39 @@ class _CardLimitsScreenState extends State<CardLimitsScreen> {
   @override
   Widget build(BuildContext context) {
     final cfg = widget.config;
-    String max(Map<String, int> m) => m[_cur] == null ? '' : '${"Maximum".tr}: ${FinanceMoney.format(m[_cur]!, _cur)}';
     return StreamBuilder<Map<String, dynamic>?>(
-      stream: FinanceCardService.limits(widget.card.id),
+      stream: _stream,
       builder: (context, snap) {
-        if (snap.connectionState != ConnectionState.waiting) _load(snap.data);
+        final bool waiting = snap.connectionState == ConnectionState.waiting;
+        if (!waiting && !snap.hasError) _load(snap.data);
         final String? problem = _limits.problem(cfg, _cur);
         final c = DsColors.of(context);
+        Widget? state;
+        if (!_loaded) {
+          state = waiting || !snap.hasError
+              ? const DsSkeletonForm(fields: 3)
+              : FinState.error(
+                  "Could not load your card limits. Check your connection and try again.".tr,
+                  onRetry: () => setState(() => _stream = FinanceCardService.limits(widget.card.id)),
+                );
+        }
+        // (field, its controller, its maximum, the cross-field rule about it)
+        final fields = <(String, TextEditingController, int?, String?)>[
+          ("Per payment", _tx, cfg.maxPerTransaction[_cur], 'The limit per payment cannot be above the daily limit.'),
+          ("Per day", _day, cfg.maxDaily[_cur], 'The daily limit cannot be above the monthly limit.'),
+          ("Per month", _month, cfg.maxMonthly[_cur], null),
+        ];
+        final errors = [for (final (_, ctrl, _, own) in fields) _fieldError(ctrl, problem, own)];
+        // A rule no field shows (should not happen) is said under them.
+        final bool shown = [
+          for (final (i, (_, ctrl, max, _)) in fields.indexed) errors[i] != null || FinanceAmount.problem(ctrl.text, _cur, max: max) != null,
+        ].any((e) => e);
         return FinScaffold(
           title: "Card limits".tr,
           subtitle: widget.card.label.isEmpty ? null : widget.card.label,
           bottomBar: DsStickyBar(child: DsButton.primary(label: "Save".tr, size: DsButtonSize.lg, expand: true, onPressed: problem == null && _loaded ? _save : null)),
-          body: !_loaded
-              ? const Padding(padding: FinSpace.pagePadding, child: DsSkeletonForm(fields: 3))
+          body: state != null
+              ? Padding(padding: FinSpace.pagePadding, child: state)
               : FinBody(
                   children: [
                     if (snap.data?['status'] == 'pending')
@@ -860,19 +1056,17 @@ class _CardLimitsScreenState extends State<CardLimitsScreen> {
                       padding: _form,
                       footnote: "Leave a field empty to use the maximum allowed.".tr,
                       children: [
-                        for (final (label, ctrl, m) in [
-                          ("Per payment", _tx, cfg.maxPerTransaction),
-                          ("Per day", _day, cfg.maxDaily),
-                          ("Per month", _month, cfg.maxMonthly),
-                        ])
-                          DsTextField(
-                            label: '${label.tr} ($_cur)',
-                            helper: max(m).isEmpty ? null : max(m),
+                        for (final (i, (label, ctrl, max, _)) in fields.indexed)
+                          FinAmountField(
+                            label: label.tr,
                             controller: ctrl,
-                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                            currency: _cur,
+                            requiredMark: false,
+                            max: max,
+                            errorText: errors[i],
                             onChanged: (_) => setState(() {}),
                           ),
-                        if (problem != null)
+                        if (problem != null && !shown)
                           Padding(
                             padding: const EdgeInsets.only(bottom: DsSpace.md),
                             child: DsInlineAlert(tone: DsTone.danger, message: problem.tr),

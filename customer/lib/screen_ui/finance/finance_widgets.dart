@@ -11,6 +11,7 @@ import 'package:customer/utils/finance_group_rules.dart';
 import 'package:customer/utils/finance_rules.dart';
 import 'package:customer/utils/saved_payment_methods.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show FilteringTextInputFormatter;
 import 'package:get/get.dart';
 
 /// Typed amounts -> integer minor units with the currency's decimals only.
@@ -30,6 +31,258 @@ abstract final class FinanceAmount {
     }
     final int minor = major * unit + (fraction.isEmpty ? 0 : int.parse(fraction.padRight(e, '0')));
     return minor > 0 ? minor : null;
+  }
+
+  /// [minor] as the text of an amount field, in major units for any
+  /// currency: 1500 XAF -> "1500", 1250 USD -> "12.50". Empty for null.
+  static String input(num? minor, String currency) {
+    if (minor == null) return '';
+    final int e = FinanceMoney.exponent(currency);
+    if (e == 0) return minor.round().toString();
+    num unit = 1;
+    for (int i = 0; i < e; i++) {
+      unit *= 10;
+    }
+    return (minor / unit).toStringAsFixed(e);
+  }
+
+  /// What is wrong with a typed amount, translated, or null: nothing typed
+  /// yet, or a valid amount within [min]..[max] (minor units).
+  static String? problem(String text, String currency, {int? min, int? max}) {
+    if (text.trim().isEmpty) return null;
+    final int? v = parse(text, currency);
+    if (v == null) {
+      // A well-formed zero: say so, not that the format is wrong.
+      if (RegExp(r'^0*(?:[.,]0*)?$').hasMatch(text.replaceAll(RegExp(r'\s'), ''))) return "Enter an amount greater than zero.".tr;
+      final int e = FinanceMoney.exponent(currency);
+      return e == 0 ? "Enter a whole amount, without decimals.".tr : "${"Enter an amount with at most".tr} $e ${"decimals".tr}.";
+    }
+    if (min != null && v < min) return '${"The minimum is".tr} ${FinanceMoney.format(min, currency)}.';
+    if (max != null && v > max) return '${"The maximum is".tr} ${FinanceMoney.format(max, currency)}.';
+    return null;
+  }
+
+  /// "500 XAF - 200 000 XAF", "At least 500 XAF", "At most ..." or null.
+  static String? range(int? min, int? max, String currency) {
+    if (min != null && max != null) return '${FinanceMoney.format(min, currency)} - ${FinanceMoney.format(max, currency)}';
+    if (min != null) return '${"At least".tr} ${FinanceMoney.format(min, currency)}';
+    if (max != null) return '${"At most".tr} ${FinanceMoney.format(max, currency)}';
+    return null;
+  }
+}
+
+/// An amount input with its currency: always shown as the field's suffix,
+/// with a currency picker when there are several - beside the field, or
+/// under it on a narrow screen or with large text (never a squeezed amount
+/// box). Only digits (and a decimal mark when the currency has decimals)
+/// can be typed; a wrong amount or one outside [min]..[max] is explained
+/// under the field as it is typed (the parent rebuilds on [onChanged]).
+class FinAmountField extends StatelessWidget {
+  final String label;
+  final TextEditingController controller;
+  final String currency;
+  final List<String> currencies;
+  final ValueChanged<String>? onCurrencyChanged;
+  final ValueChanged<String>? onChanged;
+  final bool requiredMark;
+  final String? helper;
+  final String? errorText;
+  final int? min;
+  final int? max;
+  final bool enabled;
+
+  const FinAmountField({
+    super.key,
+    required this.label,
+    required this.controller,
+    required this.currency,
+    this.currencies = const [],
+    this.onCurrencyChanged,
+    this.onChanged,
+    this.requiredMark = true,
+    this.helper,
+    this.errorText,
+    this.min,
+    this.max,
+    this.enabled = true,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = DsColors.of(context);
+    final bool decimals = FinanceMoney.exponent(currency) > 0;
+    final String? problem = errorText ?? FinanceAmount.problem(controller.text, currency, min: min, max: max);
+    final Widget field = DsTextField(
+      label: label,
+      controller: controller,
+      requiredMark: requiredMark,
+      enabled: enabled,
+      helper: problem == null ? (helper ?? FinanceAmount.range(min, max, currency)) : null,
+      errorText: problem,
+      keyboardType: TextInputType.numberWithOptions(decimal: decimals),
+      inputFormatters: [FilteringTextInputFormatter.allow(RegExp(decimals ? r'[0-9.,\s]' : r'[0-9\s]'))],
+      suffix: Padding(
+        padding: const EdgeInsetsDirectional.only(end: DsSpace.xs),
+        child: Text(currency, style: DsTypography.bodyStrong.copyWith(color: c.textSecondary)),
+      ),
+      onChanged: onChanged,
+    );
+    if (currencies.length <= 1 || onCurrencyChanged == null) return field;
+    final Widget picker = DsDropdown<String>(
+      label: "Currency".tr,
+      value: currency,
+      items: [for (final cur in currencies) DropdownMenuItem(value: cur, child: Text(cur))],
+      onChanged: enabled ? (v) => v == null ? null : onCurrencyChanged!(v) : null,
+    );
+    return LayoutBuilder(builder: (context, box) {
+      final bool narrow = box.maxWidth < 340 * MediaQuery.textScalerOf(context).scale(1);
+      if (narrow) return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [field, picker]);
+      return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Expanded(child: field),
+        const DsGap(DsSpace.sm),
+        SizedBox(width: 120, child: picker),
+      ]);
+    });
+  }
+}
+
+/// A choice in a form: a dropdown for a short list, a searchable sheet from
+/// [searchFrom] options (sectors, countries, banks, billers, members).
+class FinPickerField<T> extends StatefulWidget {
+  final String label;
+  final T? value;
+  final List<(T, String)> options;
+  final ValueChanged<T> onChanged;
+  final bool requiredMark;
+  final String? helper;
+  final String? errorText;
+  final String? searchHint;
+
+  static const int searchFrom = 9;
+
+  const FinPickerField({
+    super.key,
+    required this.label,
+    required this.value,
+    required this.options,
+    required this.onChanged,
+    this.requiredMark = false,
+    this.helper,
+    this.errorText,
+    this.searchHint,
+  });
+
+  @override
+  State<FinPickerField<T>> createState() => _FinPickerFieldState<T>();
+}
+
+class _FinPickerFieldState<T> extends State<FinPickerField<T>> {
+  late final TextEditingController _text = TextEditingController(text: _labelOf(widget.value));
+
+  String _labelOf(T? v) => v == null ? '' : (widget.options.where((o) => o.$1 == v).firstOrNull?.$2 ?? '');
+
+  @override
+  void didUpdateWidget(FinPickerField<T> old) {
+    super.didUpdateWidget(old);
+    final String shown = _labelOf(widget.value);
+    if (_text.text != shown) _text.text = shown;
+  }
+
+  @override
+  void dispose() {
+    _text.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final w = widget;
+    if (w.options.length < FinPickerField.searchFrom) {
+      return DsDropdown<T>(
+        label: w.label,
+        value: w.options.any((o) => o.$1 == w.value) ? w.value : null,
+        requiredMark: w.requiredMark,
+        items: [for (final (v, l) in w.options) DropdownMenuItem<T>(value: v, child: Text(l, overflow: TextOverflow.ellipsis))],
+        onChanged: (v) => v == null ? null : w.onChanged(v),
+      );
+    }
+    return DsTextField(
+      label: w.label,
+      controller: _text,
+      readOnly: true,
+      requiredMark: w.requiredMark,
+      helper: w.helper,
+      errorText: w.errorText,
+      suffix: const Icon(Icons.unfold_more_rounded, size: 20),
+      onTap: () async {
+        final T? v = await finPickOne<T>(title: w.label, options: w.options, selected: w.value, searchHint: w.searchHint);
+        if (v != null) w.onChanged(v);
+      },
+    );
+  }
+}
+
+/// Picks one of [options] in a sheet with a search field. Null when closed.
+Future<T?> finPickOne<T>({required String title, required List<(T, String)> options, T? selected, String? searchHint}) =>
+    finSheet<T>(title: title, child: _PickOneSheet<T>(options: options, selected: selected, searchHint: searchHint));
+
+class _PickOneSheet<T> extends StatefulWidget {
+  final List<(T, String)> options;
+  final T? selected;
+  final String? searchHint;
+
+  const _PickOneSheet({required this.options, required this.selected, required this.searchHint});
+
+  @override
+  State<_PickOneSheet<T>> createState() => _PickOneSheetState<T>();
+}
+
+class _PickOneSheetState<T> extends State<_PickOneSheet<T>> {
+  String _query = '';
+
+  @override
+  Widget build(BuildContext context) {
+    final c = DsColors.of(context);
+    final String q = _query.trim().toLowerCase();
+    final List<(T, String)> shown = q.isEmpty ? widget.options : widget.options.where((o) => o.$2.toLowerCase().contains(q)).toList();
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        DsSearchBar(hint: widget.searchHint ?? "Search".tr, onChanged: (v) => setState(() => _query = v), onClear: () => setState(() => _query = '')),
+        const DsGap(DsSpace.sm),
+        ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.5),
+          child: shown.isEmpty
+              ? Padding(
+                  padding: const EdgeInsets.symmetric(vertical: DsSpace.xl),
+                  child: Text("No match.".tr, textAlign: TextAlign.center, style: DsTypography.body.copyWith(color: c.textSecondary)),
+                )
+              : ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: shown.length,
+                  separatorBuilder: (_, _) => Divider(height: 1, thickness: 1, color: c.divider),
+                  itemBuilder: (context, i) {
+                    final (T v, String label) = shown[i];
+                    final bool on = v == widget.selected;
+                    return InkWell(
+                      onTap: () => Navigator.of(context).pop(v),
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(minHeight: 48),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: DsSpace.sm),
+                          child: Row(children: [
+                            Expanded(child: Text(label, style: (on ? DsTypography.bodyStrong : DsTypography.body).copyWith(color: c.textPrimary))),
+                            if (on) Icon(Icons.check_rounded, color: c.brandStrong, semanticLabel: "Selected".tr),
+                          ]),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+        ),
+      ],
+    );
   }
 }
 
@@ -166,7 +419,30 @@ abstract final class FinancePaySheet {
     required Future<Map<String, dynamic>> Function(Map<String, dynamic> payment) submit,
     bool payout = false,
   }) async {
+    // One payment step at a time: a second tap while it opens does nothing.
+    if (_busy) return;
+    _busy = true;
+    try {
+      await _show(context, title: title, amount: amount, currency: currency, methods: methods, submit: submit, payout: payout);
+    } finally {
+      _busy = false;
+    }
+  }
+
+  static bool _busy = false;
+
+  static Future<void> _show(
+    BuildContext context, {
+    required String title,
+    required int amount,
+    required String currency,
+    required List<String> methods,
+    required Future<Map<String, dynamic>> Function(Map<String, dynamic> payment) submit,
+    required bool payout,
+  }) async {
+    ShowToastDialog.showLoader("Please wait...".tr);
     final saved = await SavedPaymentMethods.load().catchError((_) => <SavedPaymentMethod>[]);
+    ShowToastDialog.closeLoader();
     // The options: the wallet, then each saved number of an allowed type.
     // (title, number, icon, the payment sent to the server)
     final options = <(String, String?, IconData, Map<String, dynamic>)>[
@@ -264,71 +540,109 @@ abstract final class FinancePaySheet {
       ),
     );
     if (confirmed != true || selected == null) return;
-    ShowToastDialog.showLoader("Please wait...".tr);
-    try {
-      final reply = await submit(options[selected!].$4);
-      ShowToastDialog.closeLoader();
-      final String status = reply['status']?.toString() ?? '';
-      final String instructions = reply['instructions']?.toString() ?? '';
-      // Success is shown only when the server says the money arrived.
-      final bool received = !payout && status == 'succeeded';
-      await finSheet(
-        title: (payout ? "Request sent" : (status == 'succeeded' ? "Payment received" : "Payment started")).tr,
-        child: _finAccent(
-          Builder(
-            builder: (context) {
-              final c = DsColors.of(context);
-              return Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Row(children: [
-                    DsIconWell(
-                      icon: received ? Icons.check_circle_rounded : (payout ? Icons.schedule_send_rounded : Icons.hourglass_top_rounded),
-                      tone: received ? DsTone.success : DsTone.info,
-                      size: 44,
-                    ),
-                    const DsGap(DsSpace.md),
-                    Expanded(
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        alignment: AlignmentDirectional.centerStart,
-                        child: Text(FinanceMoney.format(amount, currency), style: FinText.amount.copyWith(color: c.textPrimary)),
-                      ),
-                    ),
-                  ]),
-                  const DsGap(DsSpace.lg),
-                  Text(
-                    instructions.isNotEmpty
-                        ? instructions
-                        : (payout
-                                ? "The money is sent once your request is processed. You can follow it here."
-                                : status == 'succeeded'
-                                ? "Your payment was received."
-                                : "Approve the payment on your phone if you are asked to. This page updates when the payment is confirmed.")
-                            .tr,
-                    style: DsTypography.body.copyWith(color: c.textPrimary),
-                  ),
-                  if ((reply['reference'] ?? '').toString().isNotEmpty) ...[
-                    const DsGap(DsSpace.sm),
-                    Divider(height: DsSpace.lg, color: c.divider),
-                    FinRow("Reference".tr, ltrRef(reply['reference'])),
-                  ],
-                  const DsGap(DsSpace.lg),
-                  DsButton.primary(label: "OK".tr, expand: true, onPressed: () => Get.back()),
-                ],
-              );
-            },
-          ),
-        ),
-      );
-    } on FinanceException catch (e) {
-      ShowToastDialog.closeLoader();
-      ShowToastDialog.showToast(FinanceErrors.messageKey(e.reason).tr);
-    } catch (_) {
-      ShowToastDialog.closeLoader();
-      ShowToastDialog.showToast(FinanceErrors.messageKey(null).tr);
+    // The request; after a failure the user may try again with the same
+    // payment (the caller's request key keeps a retry from paying twice).
+    while (true) {
+      ShowToastDialog.showLoader("Please wait...".tr);
+      try {
+        final reply = await submit(options[selected!].$4);
+        ShowToastDialog.closeLoader();
+        await _result(reply, amount: amount, currency: currency, payout: payout);
+        return;
+      } catch (e) {
+        ShowToastDialog.closeLoader();
+        final String message = FinanceErrors.messageKey(e is FinanceException ? e.reason : null).tr;
+        if (!await _failed(message, payout: payout)) return;
+      }
     }
+  }
+
+  /// The server's answer: received, started (approve on the phone) or sent.
+  static Future<void> _result(Map<String, dynamic> reply, {required int amount, required String currency, required bool payout}) async {
+    final String status = reply['status']?.toString() ?? '';
+    final String instructions = reply['instructions']?.toString() ?? '';
+    // Success is shown only when the server says the money arrived.
+    final bool received = !payout && status == 'succeeded';
+    await finSheet(
+      title: (payout ? "Request sent" : (status == 'succeeded' ? "Payment received" : "Payment started")).tr,
+      child: _finAccent(
+        Builder(
+          builder: (context) {
+            final c = DsColors.of(context);
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(children: [
+                  DsIconWell(
+                    icon: received ? Icons.check_circle_rounded : (payout ? Icons.schedule_send_rounded : Icons.hourglass_top_rounded),
+                    tone: received ? DsTone.success : DsTone.info,
+                    size: 44,
+                  ),
+                  const DsGap(DsSpace.md),
+                  Expanded(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: AlignmentDirectional.centerStart,
+                      child: Text(FinanceMoney.format(amount, currency), style: FinText.amount.copyWith(color: c.textPrimary)),
+                    ),
+                  ),
+                ]),
+                const DsGap(DsSpace.lg),
+                Text(
+                  instructions.isNotEmpty
+                      ? instructions
+                      : (payout
+                              ? "The money is sent once your request is processed. You can follow it here."
+                              : status == 'succeeded'
+                              ? "Your payment was received."
+                              : "Approve the payment on your phone if you are asked to. This page updates when the payment is confirmed.")
+                          .tr,
+                  style: DsTypography.body.copyWith(color: c.textPrimary),
+                ),
+                if ((reply['reference'] ?? '').toString().isNotEmpty) ...[
+                  const DsGap(DsSpace.sm),
+                  Divider(height: DsSpace.lg, color: c.divider),
+                  FinRow("Reference".tr, ltrRef(reply['reference'])),
+                ],
+                const DsGap(DsSpace.lg),
+                DsButton.primary(label: "OK".tr, expand: true, onPressed: () => Get.back()),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  /// The request did not go through: why, and whether to try again.
+  static Future<bool> _failed(String message, {required bool payout}) async {
+    final bool? again = await finSheet<bool>(
+      title: (payout ? "Request not sent" : "Payment not completed").tr,
+      child: _finAccent(
+        Builder(
+          builder: (context) {
+            final c = DsColors.of(context);
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(children: [
+                  const DsIconWell(icon: Icons.error_outline_rounded, tone: DsTone.danger, size: 44),
+                  const DsGap(DsSpace.md),
+                  Expanded(child: Text(message, style: DsTypography.body.copyWith(color: c.textPrimary))),
+                ]),
+                const DsGap(DsSpace.lg),
+                DsButton.primary(label: "Try again".tr, icon: Icons.refresh_rounded, expand: true, onPressed: () => Get.back(result: true)),
+                const DsGap(DsSpace.sm),
+                DsButton.ghost(label: "Close".tr, expand: true, onPressed: () => Get.back(result: false)),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+    return again == true;
   }
 }
 
@@ -405,7 +719,12 @@ class FinanceLineChart extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = DsColors.of(context);
-    return SizedBox(height: height, child: CustomPaint(painter: _LinePainter(values, c.brand, c.border)));
+    if (values.isEmpty) return SizedBox(height: height);
+    // Time runs left to right in every language, as on the dates under it.
+    return Directionality(
+      textDirection: TextDirection.ltr,
+      child: SizedBox(height: height, child: CustomPaint(painter: _LinePainter(values, c.brand, c.border))),
+    );
   }
 }
 

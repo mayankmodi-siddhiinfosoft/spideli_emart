@@ -176,8 +176,9 @@ abstract final class FinanceReauth {
   }
 }
 
-/// Blocks screenshots, screen recording and the recent-apps preview while
-/// sensitive data is on screen (Android FLAG_SECURE; no effect elsewhere).
+/// Hides sensitive data from screenshots, screen recording and the
+/// recent-apps preview while it is on screen: Android FLAG_SECURE; on iOS a
+/// plain cover in the app switcher (AppDelegate.swift).
 abstract final class FinanceSecureScreen {
   static const MethodChannel _channel = MethodChannel('spideli/secure_screen');
 
@@ -189,7 +190,7 @@ abstract final class FinanceSecureScreen {
     try {
       await _channel.invokeMethod(method);
     } on MissingPluginException {
-      // iOS / other platforms: nothing to set.
+      // Other platforms: nothing to set.
     } on PlatformException {
       // Best effort.
     }

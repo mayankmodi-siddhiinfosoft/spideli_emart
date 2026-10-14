@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:customer/screen_ui/finance/fin_ds.dart';
 import 'package:customer/screen_ui/finance/finance_ui.dart';
@@ -10,6 +11,7 @@ import 'package:customer/themes/show_toast_dialog.dart';
 import 'package:customer/utils/finance_insurance_rules.dart';
 import 'package:customer/utils/finance_rules.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show FilteringTextInputFormatter;
 import 'package:get/get.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
@@ -55,6 +57,23 @@ Future<void> _open({String? storagePath, String? url}) async {
 /// A full-page state (loading / error / empty) inside the standard body.
 Widget _page(Widget state) => FinBody(children: [state]);
 
+/// The page of a record read live, until it is there: a skeleton, an error
+/// with Retry, or "no longer available" - never a skeleton for ever. Null
+/// when the record can be shown.
+Widget? _whenLoaded<T>(AsyncSnapshot<T?> snap, VoidCallback retry) {
+  final Widget? state = FinState.of(snap, onRetry: retry);
+  return state == null ? null : _page(state);
+}
+
+/// The shortest signature a subscription accepts.
+const int _signatureMin = 3;
+
+/// The shortest description of a claim the server accepts.
+const int _descriptionMin = 10;
+
+/// "At least 3 characters": the length a text field needs.
+String _atLeast(int n) => '${"At least".tr} ${FinanceUi.count(n, "character", "characters")}';
+
 class _Documents extends StatelessWidget {
   final List<InsuranceDocument> docs;
 
@@ -99,7 +118,7 @@ class _CoverRow extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Padding(padding: const EdgeInsets.only(top: 1), child: Icon(icon, size: 18, color: color)),
+            Padding(padding: const EdgeInsets.only(top: DsSpace.xxs), child: Icon(icon, size: 18, color: color)),
             const DsGap(DsSpace.md),
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -183,7 +202,8 @@ class _DateField extends StatelessWidget {
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(minHeight: 48),
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: DsSpace.lg, vertical: 14),
+                      // With the 48 minimum, as tall as the text fields.
+                      padding: const EdgeInsets.symmetric(horizontal: DsSpace.lg, vertical: DsSpace.md),
                       child: Row(children: [
                         Expanded(
                           child: Text(
@@ -205,13 +225,26 @@ class _DateField extends StatelessWidget {
   }
 }
 
-/// Picks up to [max] photos (claim evidence).
+/// Picks up to [max] photos (claim evidence), each shown as a thumbnail.
 class _PhotoPicker extends StatelessWidget {
   final List<File> files;
   final int max;
   final VoidCallback changed;
 
   const _PhotoPicker({required this.files, required this.max, required this.changed});
+
+  Future<void> _pick(ImageSource source) async {
+    try {
+      final picked = await ImagePicker().pickImage(source: source, imageQuality: 85, maxWidth: 2400);
+      if (picked != null) {
+        files.add(File(picked.path));
+        changed();
+      }
+    } catch (_) {
+      // Access refused, or no camera on the device: say how to allow it.
+      ShowToastDialog.showToast("Could not open the camera or your photos. Allow access in your phone settings, then try again.".tr);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -221,19 +254,37 @@ class _PhotoPicker extends StatelessWidget {
       children: [
         for (final (i, f) in files.indexed) ...[
           if (i > 0) Divider(height: 1, thickness: 1, color: c.divider),
-          FinListTile(
-            icon: Icons.image_outlined,
-            iconTone: DsTone.brand,
-            title: '${"Photo".tr} ${i + 1}',
-            subtitle: f.path.split('/').last,
-            trailing: DsIconButton(
-              icon: Icons.close_rounded,
-              semanticLabel: "Remove".tr,
-              onPressed: () {
-                files.removeAt(i);
-                changed();
-              },
-            ),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: DsSpace.sm),
+            child: Row(children: [
+              ClipRRect(
+                borderRadius: DsRadius.brSm,
+                child: Image.file(
+                  f,
+                  width: 48,
+                  height: 48,
+                  fit: BoxFit.cover,
+                  cacheWidth: 144,
+                  excludeFromSemantics: true,
+                  errorBuilder: (_, _, _) => Container(
+                    width: 48,
+                    height: 48,
+                    color: c.surfaceAlt,
+                    child: Icon(Icons.image_outlined, size: 20, color: c.textSecondary),
+                  ),
+                ),
+              ),
+              const DsGap(DsSpace.md),
+              Expanded(child: Text('${"Photo".tr} ${i + 1}', style: DsTypography.bodyStrong.copyWith(color: c.textPrimary))),
+              DsIconButton(
+                icon: Icons.close_rounded,
+                semanticLabel: '${"Remove".tr}: ${"Photo".tr} ${i + 1}',
+                onPressed: () {
+                  files.removeAt(i);
+                  changed();
+                },
+              ),
+            ]),
           ),
         ],
         if (files.length < max)
@@ -244,18 +295,7 @@ class _PhotoPicker extends StatelessWidget {
                 (ImageSource.camera, "Take a photo", Icons.photo_camera_outlined),
                 (ImageSource.gallery, "Add a photo", Icons.add_photo_alternate_outlined),
               ])
-                DsButton.secondary(
-                  label: label.tr,
-                  icon: icon,
-                  size: DsButtonSize.sm,
-                  onPressed: () async {
-                    final picked = await ImagePicker().pickImage(source: source, imageQuality: 85, maxWidth: 2400);
-                    if (picked != null) {
-                      files.add(File(picked.path));
-                      changed();
-                    }
-                  },
-                ),
+                DsButton.secondary(label: label.tr, icon: icon, size: DsButtonSize.sm, onPressed: () => _pick(source)),
             ]),
           ),
       ],
@@ -277,114 +317,121 @@ class InsuranceScreen extends StatefulWidget {
 
 class _InsuranceScreenState extends State<InsuranceScreen> {
   late int _tab = widget.initialTab.clamp(0, 3);
-  final Future<InsuranceConfig?> _config = FinanceInsuranceService.config();
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<InsuranceConfig?>(
-      future: _config,
-      builder: (context, cfgSnap) {
-        final cfg = cfgSnap.data;
+    return FinConfig<InsuranceConfig>(
+      load: FinanceInsuranceService.config,
+      builder: (context, st) {
+        final InsuranceConfig? cfg = st.ready ? st.config : null;
         return FinScaffold(
           title: "Online insurance".tr,
-          body: cfgSnap.connectionState == ConnectionState.waiting
-              ? _page(FinState.loading())
-              : cfg == null
-                  ? _page(FinState.empty(Icons.health_and_safety_outlined, "Insurance is not available yet.".tr))
-                  : FinBody(
-                      children: [
-                        DsSegmentedTabs(
-                          scrollable: true,
-                          segments: [DsSegment("My policies".tr), DsSegment("Quotes".tr), DsSegment("Claims".tr), DsSegment("Insurance offers".tr)],
-                          index: _tab,
-                          onChanged: (i) => setState(() => _tab = i),
-                        ),
-                        switch (_tab) {
-                          0 => _DocList(
-                              key: const ValueKey('policies'),
-                              stream: FinanceInsuranceService.policies(),
-                              empty: "You have no insurance policy yet.",
-                              onEmpty: () => setState(() => _tab = 3),
-                              tile: (p) => FinListTile(
-                                icon: _icon(p['category']?.toString()),
-                                iconTone: DsTone.brand,
-                                title: p['productName']?.toString() ?? '-',
-                                subtitle: [
-                                  if ((p['partnerName'] ?? '').toString().isNotEmpty) p['partnerName'].toString(),
-                                  if ((p['policyNumber'] ?? '').toString().isNotEmpty) '${"No.".tr} ${ltrRef(p['policyNumber'])}',
-                                ].join(' · '),
-                                status: p['status']?.toString(),
-                                statusLabel: InsuranceLabels.policy(p['status']?.toString()).tr,
-                                chevron: true,
-                                onTap: () => Get.to(() => PolicyScreen(policyId: p['id'].toString(), config: cfg)),
-                              ),
-                            ),
-                          1 => _DocList(
-                              key: const ValueKey('quotes'),
-                              stream: FinanceInsuranceService.quotes(),
-                              empty: "You have no quote yet.",
-                              onEmpty: () => setState(() => _tab = 3),
-                              tile: (q) => FinListTile(
-                                icon: _icon(q['category']?.toString()),
-                                iconTone: DsTone.brand,
-                                title: q['productName']?.toString() ?? '-',
-                                subtitle: q['status'] == 'quoted'
-                                    ? PremiumFrequency.label(q['frequency']?.toString() ?? 'annual').tr
-                                    : '${"Requested on".tr} ${_date(q['createdAt'])}',
-                                amount: q['status'] == 'quoted' ? _m(q['installmentAmount'] ?? q['premium'], q['currency']?.toString() ?? '') : null,
-                                status: q['status']?.toString(),
-                                statusLabel: InsuranceLabels.quote(q['status']?.toString()).tr,
-                                chevron: true,
-                                onTap: () => Get.to(() => QuoteScreen(quoteId: q['id'].toString(), config: cfg)),
-                              ),
-                            ),
-                          2 => _DocList(
-                              key: const ValueKey('claims'),
-                              stream: FinanceInsuranceService.claims(),
-                              empty: "You have no claim.",
-                              icon: Icons.assignment_outlined,
-                              tile: (c) => FinListTile(
-                                icon: Icons.assignment_outlined,
-                                iconTone: DsTone.brand,
-                                title: (c['productName'] ?? '').toString().isEmpty ? "Claim".tr : c['productName'].toString(),
-                                subtitle: _date(c['incidentDate']),
-                                amount: _m(c['amountClaimed'], c['currency']?.toString() ?? ''),
-                                status: c['status']?.toString(),
-                                statusLabel: InsuranceLabels.claim(c['status']?.toString()).tr,
-                                chevron: true,
-                                onTap: () => Get.to(() => ClaimScreen(claimId: c['id'].toString(), config: cfg)),
-                              ),
-                            ),
-                          _ => _Catalog(config: cfg),
-                        },
-                      ],
+          // Loading, unreadable (with Retry) or not offered by the admin.
+          body: cfg == null
+              ? _page(st.placeholder(Icons.health_and_safety_outlined, "Insurance is not available yet.".tr) ?? FinState.loading())
+              : FinBody(
+                  children: [
+                    DsSegmentedTabs(
+                      scrollable: true,
+                      segments: [DsSegment("My policies".tr), DsSegment("Quotes".tr), DsSegment("Claims".tr), DsSegment("Insurance offers".tr)],
+                      index: _tab,
+                      onChanged: (i) => setState(() => _tab = i),
                     ),
+                    switch (_tab) {
+                      0 => _DocList(
+                          key: const ValueKey('policies'),
+                          load: FinanceInsuranceService.policies,
+                          empty: "You have no insurance policy yet.",
+                          onEmpty: () => setState(() => _tab = 3),
+                          tile: (p) => FinListTile(
+                            icon: _icon(p['category']?.toString()),
+                            iconTone: DsTone.brand,
+                            title: p['productName']?.toString() ?? '-',
+                            subtitle: [
+                              if ((p['partnerName'] ?? '').toString().isNotEmpty) p['partnerName'].toString(),
+                              if ((p['policyNumber'] ?? '').toString().isNotEmpty) '${"No.".tr} ${ltrRef(p['policyNumber'])}',
+                            ].join(' · '),
+                            status: p['status']?.toString(),
+                            statusLabel: InsuranceLabels.policy(p['status']?.toString()).tr,
+                            chevron: true,
+                            onTap: () => Get.to(() => PolicyScreen(policyId: p['id'].toString(), config: cfg)),
+                          ),
+                        ),
+                      1 => _DocList(
+                          key: const ValueKey('quotes'),
+                          load: FinanceInsuranceService.quotes,
+                          empty: "You have no quote yet.",
+                          onEmpty: () => setState(() => _tab = 3),
+                          tile: (q) => FinListTile(
+                            icon: _icon(q['category']?.toString()),
+                            iconTone: DsTone.brand,
+                            title: q['productName']?.toString() ?? '-',
+                            subtitle: q['status'] == 'quoted'
+                                ? PremiumFrequency.label(q['frequency']?.toString() ?? 'annual').tr
+                                : '${"Requested on".tr} ${_date(q['createdAt'])}',
+                            amount: q['status'] == 'quoted' ? _m(q['installmentAmount'] ?? q['premium'], q['currency']?.toString() ?? '') : null,
+                            status: q['status']?.toString(),
+                            statusLabel: InsuranceLabels.quote(q['status']?.toString()).tr,
+                            chevron: true,
+                            onTap: () => Get.to(() => QuoteScreen(quoteId: q['id'].toString(), config: cfg)),
+                          ),
+                        ),
+                      2 => _DocList(
+                          key: const ValueKey('claims'),
+                          load: FinanceInsuranceService.claims,
+                          empty: "You have no claim.",
+                          icon: Icons.assignment_outlined,
+                          tile: (c) => FinListTile(
+                            icon: Icons.assignment_outlined,
+                            iconTone: DsTone.brand,
+                            title: (c['productName'] ?? '').toString().isEmpty ? "Claim".tr : c['productName'].toString(),
+                            subtitle: _date(c['incidentDate']),
+                            amount: _m(c['amountClaimed'], c['currency']?.toString() ?? ''),
+                            status: c['status']?.toString(),
+                            statusLabel: InsuranceLabels.claim(c['status']?.toString()).tr,
+                            chevron: true,
+                            onTap: () => Get.to(() => ClaimScreen(claimId: c['id'].toString(), config: cfg)),
+                          ),
+                        ),
+                      _ => _Catalog(config: cfg),
+                    },
+                  ],
+                ),
         );
       },
     );
   }
 }
 
-class _DocList extends StatelessWidget {
-  final Stream<List<Map<String, dynamic>>> stream;
+class _DocList extends StatefulWidget {
+  /// Subscribes to the list (again on Retry).
+  final Stream<List<Map<String, dynamic>>> Function() load;
   final String empty;
   final IconData icon;
   final VoidCallback? onEmpty;
   final Widget Function(Map<String, dynamic>) tile;
 
-  const _DocList({super.key, required this.stream, required this.empty, required this.tile, this.onEmpty, this.icon = Icons.health_and_safety_outlined});
+  const _DocList({super.key, required this.load, required this.empty, required this.tile, this.onEmpty, this.icon = Icons.health_and_safety_outlined});
+
+  @override
+  State<_DocList> createState() => _DocListState();
+}
+
+class _DocListState extends State<_DocList> {
+  late Stream<List<Map<String, dynamic>>> _stream = widget.load();
 
   @override
   Widget build(BuildContext context) {
+    final w = widget;
     return StreamBuilder<List<Map<String, dynamic>>>(
-      stream: stream,
+      stream: _stream,
       builder: (context, snap) {
-        if (snap.hasError) return FinState.error("Could not load this list.".tr);
+        if (snap.hasError) return FinState.error("Could not load this list.".tr, onRetry: () => setState(() => _stream = w.load()));
         if (!snap.hasData) return FinState.loading();
         if (snap.data!.isEmpty) {
-          return FinState.empty(icon, empty.tr, actionLabel: onEmpty == null ? null : "See the insurance offers".tr, onAction: onEmpty);
+          return FinState.empty(w.icon, w.empty.tr, actionLabel: w.onEmpty == null ? null : "See the insurance offers".tr, onAction: w.onEmpty);
         }
-        return FinSection(top: DsSpace.lg, divided: true, children: [for (final d in snap.data!) tile(d)]);
+        return FinSection(top: DsSpace.lg, divided: true, children: [for (final d in snap.data!) w.tile(d)]);
       },
     );
   }
@@ -402,14 +449,15 @@ class _Catalog extends StatefulWidget {
 }
 
 class _CatalogState extends State<_Catalog> {
+  late Stream<List<InsuranceProduct>> _products = FinanceInsuranceService.products();
   String? _category;
 
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<List<InsuranceProduct>>(
-      stream: FinanceInsuranceService.products(),
+      stream: _products,
       builder: (context, snap) {
-        if (snap.hasError) return FinState.error("Could not load the insurance offers.".tr);
+        if (snap.hasError) return FinState.error("Could not load the insurance offers.".tr, onRetry: () => setState(() => _products = FinanceInsuranceService.products()));
         if (!snap.hasData) return FinState.loading();
         final all = snap.data!;
         final categories = widget.config.categories.where((c) => all.any((p) => p.category == c)).toList();
@@ -474,30 +522,29 @@ class InsuranceProductScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<InsuranceProduct?>(
-      stream: FinanceInsuranceService.product(productId),
-      builder: (context, snap) {
-        final p = snap.data;
-        return FinScaffold(
-          title: p == null ? "Insurance".tr : InsuranceLabels.category(p.category).tr,
-          bottomBar: p == null || !p.acceptsQuotes
-              ? null
-              : DsStickyBar(
-                  child: DsButton.primary(
-                    label: "Get a quote".tr,
-                    icon: Icons.request_quote_outlined,
-                    size: DsButtonSize.lg,
-                    expand: true,
-                    onPressed: () => Get.to(() => QuoteRequestScreen(product: p, config: config)),
+    // Retry subscribes again: a failed stream does not recover by itself.
+    return StatefulBuilder(
+      builder: (context, refresh) => StreamBuilder<InsuranceProduct?>(
+        stream: FinanceInsuranceService.product(productId),
+        builder: (context, snap) {
+          final p = snap.data;
+          return FinScaffold(
+            title: p == null ? "Insurance".tr : InsuranceLabels.category(p.category).tr,
+            bottomBar: p == null || !p.acceptsQuotes
+                ? null
+                : DsStickyBar(
+                    child: DsButton.primary(
+                      label: "Get a quote".tr,
+                      icon: Icons.request_quote_outlined,
+                      size: DsButtonSize.lg,
+                      expand: true,
+                      onPressed: () => Get.to(() => QuoteRequestScreen(product: p, config: config)),
+                    ),
                   ),
-                ),
-          body: snap.hasError
-              ? _page(FinState.error("Could not load this insurance.".tr))
-              : p == null
-                  ? _page(FinState.loading(rows: 4))
-                  : _body(context, p),
-        );
-      },
+            body: _whenLoaded(snap, () => refresh(() {})) ?? _body(context, p!),
+          );
+        },
+      ),
     );
   }
 
@@ -574,10 +621,30 @@ class _QuoteRequestScreenState extends State<QuoteRequestScreen> {
     super.dispose();
   }
 
-  bool get _complete => widget.product.factors.every((f) => f.multiplierFor(_answers[f.key]) != null);
+  /// The questions without a valid answer yet (their own labels, from the insurer).
+  List<String> get _unanswered => [for (final f in widget.product.factors) if (f.multiplierFor(_answers[f.key]) == null) f.label];
+
+  /// "18 - 65", "At least 18", "At most 65", or null: the accepted values of a number question.
+  static String? _range(RatingFactor f) {
+    String n(double v) => v == v.truncateToDouble() ? v.toStringAsFixed(0) : '$v';
+    if (f.min != null && f.max != null) return ltr('${n(f.min!)} - ${n(f.max!)}');
+    if (f.min != null) return '${"At least".tr} ${ltr(n(f.min!))}';
+    if (f.max != null) return '${"At most".tr} ${ltr(n(f.max!))}';
+    return null;
+  }
+
+  /// What is wrong with a typed number, said with the accepted range; null when fine or empty.
+  String? _numberProblem(RatingFactor f) {
+    final String text = _numbers[f.key]?.text.trim() ?? '';
+    if (text.isEmpty || f.multiplierFor(_answers[f.key]) != null) return null;
+    if (_answers[f.key] == null) return "Enter a number.".tr;
+    final String? range = _range(f);
+    return range == null ? "Outside the accepted range".tr : '${"Outside the accepted range".tr}: $range';
+  }
 
   Future<void> _submit() async {
-    if (!_complete) return ShowToastDialog.showToast("Please answer every question with a valid value.".tr);
+    // The button is enabled only once every question is answered.
+    if (_unanswered.isNotEmpty) return;
     String? id;
     final ok = await FinanceUi.run(() async {
       id = await FinanceInsuranceService.requestQuote(productId: widget.product.id, answers: _answers, frequency: _frequency, coverStart: _start);
@@ -590,12 +657,20 @@ class _QuoteRequestScreenState extends State<QuoteRequestScreen> {
     final p = widget.product;
     final c = DsColors.of(context);
     final estimate = RateSimulator.estimate(p, _answers, _frequency);
+    final missing = _unanswered;
     return FinScaffold(
       title: "Get a quote".tr,
       subtitle: p.name,
       bottomBar: DsStickyBar(
         child: FinanceKycGate(
-          builder: (context, verified) => DsButton.primary(label: "Request my quote".tr, size: DsButtonSize.lg, expand: true, onPressed: verified && _complete ? _submit : null),
+          builder: (context, verified) => Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              FinMissing(missing),
+              DsButton.primary(label: "Request my quote".tr, size: DsButtonSize.lg, expand: true, onPressed: verified && missing.isEmpty ? _submit : null),
+            ],
+          ),
         ),
       ),
       body: FinBody(
@@ -608,11 +683,12 @@ class _QuoteRequestScreenState extends State<QuoteRequestScreen> {
               children: [
                 for (final f in p.factors)
                   if (f.type == 'select')
-                    DsDropdown<String>(
+                    // A dropdown for a few options, a searchable sheet for a long list.
+                    FinPickerField<String>(
                       label: f.label,
                       requiredMark: true,
                       value: _answers[f.key] as String?,
-                      items: [for (final o in f.options) DropdownMenuItem(value: o.value, child: Text(o.label))],
+                      options: [for (final o in f.options) (o.value, o.label)],
                       onChanged: (v) => setState(() => _answers[f.key] = v),
                     )
                   else
@@ -621,8 +697,10 @@ class _QuoteRequestScreenState extends State<QuoteRequestScreen> {
                       requiredMark: true,
                       controller: _numbers.putIfAbsent(f.key, TextEditingController.new),
                       keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                      helper: f.min == null && f.max == null ? null : ltr('${f.min?.toStringAsFixed(0) ?? ''} - ${f.max?.toStringAsFixed(0) ?? ''}'),
-                      errorText: _numbers[f.key]?.text.isNotEmpty == true && f.multiplierFor(_answers[f.key]) == null ? "Outside the accepted range".tr : null,
+                      // A minus sign only where the insurer accepts negative values.
+                      inputFormatters: [FilteringTextInputFormatter.allow(RegExp(f.min != null && f.min! < 0 ? r'[0-9.,-]' : r'[0-9.,]'))],
+                      helper: _numberProblem(f) == null ? _range(f) : null,
+                      errorText: _numberProblem(f),
                       onChanged: (v) => setState(() => _answers[f.key] = double.tryParse(v.replaceAll(',', '.'))),
                     ),
               ],
@@ -632,7 +710,7 @@ class _QuoteRequestScreenState extends State<QuoteRequestScreen> {
             top: p.factors.isEmpty ? 0 : FinSpace.section,
             padding: _form,
             children: [
-              DsFieldLabel("Pay".tr),
+              DsFieldLabel("Payment frequency".tr),
               Wrap(spacing: DsSpace.sm, runSpacing: DsSpace.sm, children: [
                 for (final f in p.frequencies.keys) ChoiceChip(label: Text(PremiumFrequency.label(f).tr), selected: _frequency == f, onSelected: (_) => setState(() => _frequency = f)),
               ]),
@@ -699,20 +777,26 @@ class _QuoteScreenState extends State<QuoteScreen> {
   }
 
   Future<void> _accept(Map<String, dynamic> q, int amount, String cur) async {
-    final key = FinanceGroupService.newRequestKey();
     await FinancePaySheet.show(
       context,
       title: "${"First premium".tr} · ${q['productName'] ?? ''}",
       amount: amount,
       currency: cur,
       methods: widget.config.paymentMethods,
-      submit: (payment) => FinanceInsuranceService.acceptQuote(
-        quoteId: widget.quoteId,
-        termsVersion: FinanceSummary.intOf(q['termsVersion']),
-        signatureName: _signature.text.trim(),
-        payment: payment,
-        requestKey: key,
-      ),
+      submit: (payment) async {
+        // One key per intended acceptance, kept across retries (a timeout
+        // after the server took it must not charge twice).
+        final intent = FinanceRequestKeys.intentOf('insuranceAcceptQuote', widget.quoteId, amount, payment);
+        final reply = await FinanceInsuranceService.acceptQuote(
+          quoteId: widget.quoteId,
+          termsVersion: FinanceSummary.intOf(q['termsVersion']),
+          signatureName: _signature.text.trim(),
+          payment: payment,
+          requestKey: FinanceRequestKeys.of(intent),
+        );
+        FinanceRequestKeys.done(intent);
+        return reply;
+      },
     );
   }
 
@@ -726,36 +810,47 @@ class _QuoteScreenState extends State<QuoteScreen> {
     if (ok) await FinanceUi.run(() => FinanceInsuranceService.declineQuote(widget.quoteId), success: "Quote declined");
   }
 
+  late Stream<Map<String, dynamic>?> _quote = FinanceInsuranceService.doc('insurance_quotes', widget.quoteId);
+
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<Map<String, dynamic>?>(
-      stream: FinanceInsuranceService.doc('insurance_quotes', widget.quoteId),
+      stream: _quote,
       builder: (context, snap) {
         final q = snap.data;
         final quote = q == null ? null : Quote.fromMap(q, FinanceGroupService.toDate);
         final bool canAccept = quote?.canAccept(DateTime.now()) == true;
         final String cur = q?['currency']?.toString() ?? '';
         final int amount = FinanceSummary.intOf(q?['installmentAmount'] ?? q?['premium']);
+        // What is still missing, so the disabled button is never a dead end.
+        final missing = [
+          if (!_accepted) "accept the terms".tr,
+          if (_signature.text.trim().length < _signatureMin) "your signature".tr,
+        ];
         return FinScaffold(
           title: "Quote".tr,
           bottomBar: !canAccept
               ? null
               : DsStickyBar(
                   child: FinanceKycGate(
-                    builder: (context, verified) => DsButton.primary(
-                      label: "${"Accept and pay".tr} ${FinanceMoney.format(amount, cur)}",
-                      icon: Icons.lock_outline_rounded,
-                      size: DsButtonSize.lg,
-                      expand: true,
-                      onPressed: verified && _accepted && _signature.text.trim().length >= 3 ? () => _accept(q!, amount, cur) : null,
+                    builder: (context, verified) => Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        FinMissing(missing),
+                        DsButton.primary(
+                          label: "${"Accept and pay".tr} ${FinanceMoney.format(amount, cur)}",
+                          icon: Icons.lock_outline_rounded,
+                          size: DsButtonSize.lg,
+                          expand: true,
+                          onPressed: verified && missing.isEmpty ? () => _accept(q!, amount, cur) : null,
+                        ),
+                      ],
                     ),
                   ),
                 ),
-          body: snap.hasError
-              ? _page(FinState.error("Could not load this quote.".tr))
-              : q == null
-                  ? _page(FinState.loading(rows: 4))
-                  : _body(context, q, quote!, canAccept, amount, cur),
+          body: _whenLoaded(snap, () => setState(() => _quote = FinanceInsuranceService.doc('insurance_quotes', widget.quoteId))) ??
+              _body(context, q!, quote!, canAccept, amount, cur),
         );
       },
     );
@@ -836,7 +931,7 @@ class _QuoteScreenState extends State<QuoteScreen> {
               const DsGap(DsSpace.sm),
               DsTextField(
                 label: "Full name".tr,
-                helper: "Type your full name to sign. It is recorded with the date and the terms version.".tr,
+                helper: '${"Type your full name to sign. It is recorded with the date and the terms version.".tr} ${_atLeast(_signatureMin)}.',
                 controller: _signature,
                 requiredMark: true,
                 textCapitalization: TextCapitalization.words,
@@ -900,7 +995,8 @@ class PolicyScreen extends StatelessWidget {
                     style: DsTypography.body.copyWith(color: c.textSecondary)),
                 const DsGap(DsSpace.lg),
                 DsTextField(label: "Reason (optional)".tr, controller: reason, maxLines: 3),
-                DsButton.primary(label: "Request the cancellation".tr, expand: true, color: c.danger, onPressed: () => Get.back(result: true)),
+                // dangerStrong: white text on it is readable (danger is too light).
+                DsButton.primary(label: "Request the cancellation".tr, expand: true, color: c.dangerStrong, onPressed: () => Get.back(result: true)),
                 DsButton.ghost(label: "Cancel".tr, expand: true, onPressed: () => Get.back(result: false)),
               ],
             );
@@ -911,50 +1007,54 @@ class PolicyScreen extends StatelessWidget {
     if (ok == true) await FinanceUi.run(() => FinanceInsuranceService.requestCancellation(policyId, reason.text.trim()), success: "Cancellation requested");
   }
 
+  // One key per intended payment, kept across retries until the server
+  // takes it (a timeout after it did must not charge twice).
   Future<void> _renew(BuildContext context, int renewalPremium, String cur) async {
-    final key = FinanceGroupService.newRequestKey();
-    await FinancePaySheet.show(context,
-        title: "Renewal".tr, amount: renewalPremium, currency: cur, methods: config.paymentMethods, submit: (pay) => FinanceInsuranceService.renew(policyId, pay, key));
+    await FinancePaySheet.show(context, title: "Renewal".tr, amount: renewalPremium, currency: cur, methods: config.paymentMethods, submit: (pay) async {
+      final intent = FinanceRequestKeys.intentOf('insuranceRenew', policyId, renewalPremium, pay);
+      final reply = await FinanceInsuranceService.renew(policyId, pay, FinanceRequestKeys.of(intent));
+      FinanceRequestKeys.done(intent);
+      return reply;
+    });
   }
 
   Future<void> _payPremium(BuildContext context, Map<String, dynamic> pr, String cur) async {
-    final key = FinanceGroupService.newRequestKey();
     final int amount = FinanceSummary.intOf(pr['amount']);
-    await FinancePaySheet.show(context,
-        title: "Premium".tr,
-        amount: amount,
-        currency: cur,
-        methods: config.paymentMethods,
-        submit: (pay) => FinanceInsuranceService.payPremium(policyId, pr['id'].toString(), pay, key));
+    final String premiumId = pr['id'].toString();
+    await FinancePaySheet.show(context, title: "Premium".tr, amount: amount, currency: cur, methods: config.paymentMethods, submit: (pay) async {
+      final intent = FinanceRequestKeys.intentOf('insurancePayPremium', '$policyId/$premiumId', amount, pay);
+      final reply = await FinanceInsuranceService.payPremium(policyId, premiumId, pay, FinanceRequestKeys.of(intent));
+      FinanceRequestKeys.done(intent);
+      return reply;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<Map<String, dynamic>?>(
-      stream: FinanceInsuranceService.doc('insurance_policies', policyId),
-      builder: (context, snap) {
-        final p = snap.data;
-        final String status = p?['status']?.toString() ?? '';
-        return FinScaffold(
-          title: "Policy".tr,
-          bottomBar: p == null || !PolicyActions.canClaim(status)
-              ? null
-              : DsStickyBar(
-                  child: DsButton.primary(
-                    label: "Make a claim".tr,
-                    icon: Icons.assignment_outlined,
-                    size: DsButtonSize.lg,
-                    expand: true,
-                    onPressed: () => Get.to(() => ClaimFormScreen(policy: p, config: config)),
+    // Retry subscribes again: a failed stream does not recover by itself.
+    return StatefulBuilder(
+      builder: (context, refresh) => StreamBuilder<Map<String, dynamic>?>(
+        stream: FinanceInsuranceService.doc('insurance_policies', policyId),
+        builder: (context, snap) {
+          final p = snap.data;
+          final String status = p?['status']?.toString() ?? '';
+          return FinScaffold(
+            title: "Policy".tr,
+            bottomBar: p == null || !PolicyActions.canClaim(status)
+                ? null
+                : DsStickyBar(
+                    child: DsButton.primary(
+                      label: "Make a claim".tr,
+                      icon: Icons.assignment_outlined,
+                      size: DsButtonSize.lg,
+                      expand: true,
+                      onPressed: () => Get.to(() => ClaimFormScreen(policy: p, config: config)),
+                    ),
                   ),
-                ),
-          body: snap.hasError
-              ? _page(FinState.error("Could not load this policy.".tr))
-              : p == null
-                  ? _page(FinState.loading(rows: 4))
-                  : _body(context, p, status),
-        );
-      },
+            body: _whenLoaded(snap, () => refresh(() {})) ?? _body(context, p!, status),
+          );
+        },
+      ),
     );
   }
 
@@ -995,27 +1095,7 @@ class PolicyScreen extends StatelessWidget {
             if (p['deductible'] != null) FinRow("Deductible".tr, _m(p['deductible'], cur)),
           ],
         ),
-        StreamBuilder<List<Map<String, dynamic>>>(
-          stream: FinanceInsuranceService.premiums(policyId),
-          builder: (context, snap) {
-            final list = snap.data ?? const [];
-            if (list.isEmpty) return const SizedBox.shrink();
-            Widget rows(bool verified) => Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    for (final (i, pr) in list.indexed) ...[
-                      if (i > 0) Divider(height: 1, thickness: 1, color: c.divider),
-                      _premiumRow(context, pr, cur, verified),
-                    ],
-                  ],
-                );
-            final bool payable = list.any((pr) => PolicyActions.premiumPayable(pr['status']?.toString()));
-            return FinSection(
-              title: "Premiums".tr,
-              children: [payable ? FinanceKycGate(builder: (context, verified) => rows(verified)) : rows(false)],
-            );
-          },
-        ),
+        _Premiums(policyId: policyId, currency: cur, onPay: (pr) => _payPremium(context, pr, cur)),
         if (canRenew || canAutoRenew)
           FinSection(
             title: "Renewal".tr,
@@ -1044,30 +1124,34 @@ class PolicyScreen extends StatelessWidget {
                 ),
             ],
           ),
-        StreamBuilder<List<Map<String, dynamic>>>(
-          stream: FinanceInsuranceService.policyClaims(policyId),
-          builder: (context, snap) {
-            final list = snap.data ?? const [];
-            if (list.isEmpty) return const SizedBox.shrink();
-            return FinSection(
-              title: "Claims".tr,
-              divided: true,
-              children: [
-                for (final cl in list)
-                  FinListTile(
-                    icon: Icons.assignment_outlined,
-                    iconTone: DsTone.brand,
-                    title: _date(cl['incidentDate']),
-                    subtitle: (cl['description'] ?? '').toString(),
-                    amount: _m(cl['amountClaimed'], cur),
-                    status: cl['status']?.toString(),
-                    statusLabel: InsuranceLabels.claim(cl['status']?.toString()).tr,
-                    chevron: true,
-                    onTap: () => Get.to(() => ClaimScreen(claimId: cl['id'].toString(), config: config)),
-                  ),
-              ],
-            );
-          },
+        // Retry subscribes again: a failed stream does not recover by itself.
+        StatefulBuilder(
+          builder: (context, refresh) => StreamBuilder<List<Map<String, dynamic>>>(
+            stream: FinanceInsuranceService.policyClaims(policyId),
+            builder: (context, snap) {
+              if (snap.hasError) return FinState.error("Could not load this list.".tr, onRetry: () => refresh(() {}));
+              final list = snap.data ?? const [];
+              if (list.isEmpty) return const SizedBox.shrink();
+              return FinSection(
+                title: "Claims".tr,
+                divided: true,
+                children: [
+                  for (final cl in list)
+                    FinListTile(
+                      icon: Icons.assignment_outlined,
+                      iconTone: DsTone.brand,
+                      title: '${"Claim of".tr} ${_date(cl['incidentDate'])}',
+                      subtitle: (cl['description'] ?? '').toString(),
+                      amount: _m(cl['amountClaimed'], cur),
+                      status: cl['status']?.toString(),
+                      statusLabel: InsuranceLabels.claim(cl['status']?.toString()).tr,
+                      chevron: true,
+                      onTap: () => Get.to(() => ClaimScreen(claimId: cl['id'].toString(), config: config)),
+                    ),
+                ],
+              );
+            },
+          ),
         ),
         if (Coverage.list(p['coverages']).isNotEmpty) _Coverages(Coverage.list(p['coverages']), cur),
         if (InsuranceDocument.list(p['documents']).isNotEmpty) _Documents(InsuranceDocument.list(p['documents'])),
@@ -1079,24 +1163,97 @@ class PolicyScreen extends StatelessWidget {
       ],
     );
   }
+}
 
-  Widget _premiumRow(BuildContext context, Map<String, dynamic> pr, String cur, bool verified) {
+/// The premiums of a policy: what is due first, each with its own Pay
+/// button, then what comes next, then what was paid (latest first).
+class _Premiums extends StatefulWidget {
+  final String policyId;
+  final String currency;
+  final void Function(Map<String, dynamic> premium) onPay;
+
+  const _Premiums({required this.policyId, required this.currency, required this.onPay});
+
+  @override
+  State<_Premiums> createState() => _PremiumsState();
+}
+
+class _PremiumsState extends State<_Premiums> {
+  /// Rows shown before "See all" (premiums to pay are always all shown).
+  static const int _preview = 4;
+
+  late Stream<List<Map<String, dynamic>>> _stream = FinanceInsuranceService.premiums(widget.policyId);
+  bool _all = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = DsColors.of(context);
+    return StreamBuilder<List<Map<String, dynamic>>>(
+      stream: _stream,
+      builder: (context, snap) {
+        if (snap.hasError) {
+          return FinState.error("Could not load this list.".tr, onRetry: () => setState(() => _stream = FinanceInsuranceService.premiums(widget.policyId)));
+        }
+        final list = snap.data ?? const <Map<String, dynamic>>[];
+        if (list.isEmpty) return const SizedBox.shrink();
+        bool payable(Map<String, dynamic> pr) => PolicyActions.premiumPayable(pr['status']?.toString());
+        // The server lists them by due date, oldest first.
+        final ordered = [
+          ...list.where(payable),
+          ...list.where((pr) => !payable(pr) && pr['status'] != 'paid'),
+          ...list.reversed.where((pr) => pr['status'] == 'paid'),
+        ];
+        final int collapsed = math.max(_preview, list.where(payable).length);
+        final bool more = ordered.length > collapsed;
+        final shown = _all || !more ? ordered : ordered.take(collapsed).toList();
+        Widget rows(bool verified) => Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (final (i, pr) in shown.indexed) ...[
+                  if (i > 0) Divider(height: 1, thickness: 1, color: c.divider),
+                  _row(pr, verified),
+                ],
+              ],
+            );
+        return FinSection(
+          title: "Premiums".tr,
+          actionLabel: more ? (_all ? "Show less" : "See all").tr : null,
+          onAction: () => setState(() => _all = !_all),
+          children: [list.any(payable) ? FinanceKycGate(builder: (context, verified) => rows(verified)) : rows(false)],
+        );
+      },
+    );
+  }
+
+  Widget _row(Map<String, dynamic> pr, bool verified) {
     final String? status = pr['status']?.toString();
     final bool payable = PolicyActions.premiumPayable(status);
-    return FinListTile(
+    final String amount = _m(pr['amount'], widget.currency);
+    final tile = FinListTile(
       icon: Icons.event_outlined,
       iconTone: payable ? FinStatus.tone(status) : DsTone.neutral,
       title: _date(pr['dueDate']),
-      amount: _m(pr['amount'], cur),
+      amount: amount,
       status: status,
       statusLabel: InsuranceLabels.premium(status).tr,
-      trailing: !payable
-          ? null
-          : DsButton.primary(
-              label: "Pay".tr,
-              size: DsButtonSize.sm,
-              onPressed: !verified ? null : () => _payPremium(context, pr, cur),
-            ),
+    );
+    if (!payable) return tile;
+    // The button on its own line: beside the date, amount and status it
+    // overflowed a small phone with large text.
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        tile,
+        Padding(
+          padding: const EdgeInsets.only(bottom: DsSpace.md),
+          child: DsButton.primary(
+            label: '${"Pay".tr} $amount',
+            size: DsButtonSize.sm,
+            expand: true,
+            onPressed: verified ? () => widget.onPay(pr) : null,
+          ),
+        ),
+      ],
     );
   }
 }
@@ -1116,24 +1273,42 @@ class ClaimFormScreen extends StatefulWidget {
 
 class _ClaimFormScreenState extends State<ClaimFormScreen> {
   final _description = TextEditingController();
+  final _descriptionFocus = FocusNode();
   final _amount = TextEditingController();
   final List<File> _files = [];
   DateTime? _incident;
 
+  /// The description is checked once the user leaves it, not at every letter.
+  bool _descriptionLeft = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _descriptionFocus.addListener(() {
+      if (!_descriptionFocus.hasFocus && mounted) setState(() => _descriptionLeft = true);
+    });
+  }
+
   @override
   void dispose() {
     _description.dispose();
+    _descriptionFocus.dispose();
     _amount.dispose();
     super.dispose();
   }
 
   String get _currency => widget.policy['currency']?.toString() ?? '';
 
+  /// What is still missing; the button is enabled once it is empty.
+  List<String> get _missing => [
+        if (_incident == null) "the date of the incident".tr,
+        if (_description.text.trim().length < _descriptionMin) "a description".tr,
+        if (FinanceAmount.parse(_amount.text, _currency) == null) "a valid amount".tr,
+      ];
+
   Future<void> _submit() async {
     final int? amount = FinanceAmount.parse(_amount.text, _currency);
-    if (_incident == null) return ShowToastDialog.showToast("Choose the date of the incident.".tr);
-    if (_description.text.trim().length < 10) return ShowToastDialog.showToast("Describe what happened.".tr);
-    if (amount == null) return ShowToastDialog.showToast("Enter the amount you claim.".tr);
+    if (_incident == null || _description.text.trim().length < _descriptionMin || amount == null) return;
     String? id;
     final ok = await FinanceUi.run(() async {
       id = await FinanceInsuranceService.submitClaim(
@@ -1152,10 +1327,24 @@ class _ClaimFormScreenState extends State<ClaimFormScreen> {
     final c = DsColors.of(context);
     final DateTime today = DateUtils.dateOnly(DateTime.now());
     final DateTime first = FinanceGroupService.toDate(widget.policy['coverStart']) ?? today.subtract(const Duration(days: 365));
+    final missing = _missing;
+    final String description = _description.text.trim();
+    final String? descriptionError = !_descriptionLeft || description.length >= _descriptionMin
+        ? null
+        : (description.isEmpty ? "Describe what happened.".tr : '${"Describe what happened.".tr} ${_atLeast(_descriptionMin)}.');
     return FinScaffold(
       title: "Make a claim".tr,
       subtitle: widget.policy['productName']?.toString(),
-      bottomBar: DsStickyBar(child: DsButton.primary(label: "Send my claim".tr, size: DsButtonSize.lg, expand: true, onPressed: _submit)),
+      bottomBar: DsStickyBar(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            FinMissing(missing),
+            DsButton.primary(label: "Send my claim".tr, size: DsButtonSize.lg, expand: true, onPressed: missing.isEmpty ? _submit : null),
+          ],
+        ),
+      ),
       body: FinBody(
         children: [
           FinSection(
@@ -1173,12 +1362,23 @@ class _ClaimFormScreenState extends State<ClaimFormScreen> {
                   if (d != null) setState(() => _incident = d);
                 },
               ),
-              DsTextField(label: "Description".tr, hint: "Where, how, and what was damaged or lost.".tr, controller: _description, maxLines: 5, requiredMark: true),
               DsTextField(
-                label: "${"Amount claimed".tr} ($_currency)",
-                controller: _amount,
+                label: "Description".tr,
+                hint: "Where, how, and what was damaged or lost.".tr,
+                controller: _description,
+                focusNode: _descriptionFocus,
+                maxLines: 5,
                 requiredMark: true,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                // The minimum is said up front, and again if the user leaves it short.
+                helper: descriptionError == null ? _atLeast(_descriptionMin) : null,
+                errorText: descriptionError,
+                onChanged: (_) => setState(() {}),
+              ),
+              FinAmountField(
+                label: "Amount claimed".tr,
+                controller: _amount,
+                currency: _currency,
+                onChanged: (_) => setState(() {}),
               ),
             ],
           ),
@@ -1235,21 +1435,16 @@ class _ClaimScreenState extends State<ClaimScreen> {
     if (ok) await FinanceUi.run(() => FinanceInsuranceService.withdrawClaim(widget.claimId), success: "Claim withdrawn");
   }
 
+  late Stream<Map<String, dynamic>?> _claim = FinanceInsuranceService.doc('insurance_claims', widget.claimId);
+
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<Map<String, dynamic>?>(
-      stream: FinanceInsuranceService.doc('insurance_claims', widget.claimId),
-      builder: (context, snap) {
-        final c = snap.data;
-        return FinScaffold(
-          title: "Claim".tr,
-          body: snap.hasError
-              ? _page(FinState.error("Could not load this claim.".tr))
-              : c == null
-                  ? _page(FinState.loading(rows: 4))
-                  : _body(context, c),
-        );
-      },
+      stream: _claim,
+      builder: (context, snap) => FinScaffold(
+        title: "Claim".tr,
+        body: _whenLoaded(snap, () => setState(() => _claim = FinanceInsuranceService.doc('insurance_claims', widget.claimId))) ?? _body(context, snap.data!),
+      ),
     );
   }
 
