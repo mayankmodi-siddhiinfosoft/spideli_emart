@@ -1,6 +1,8 @@
+import 'package:customer/models/admin_commission_model.dart';
 import 'package:customer/models/parcel_order_model.dart';
 import 'package:customer/models/parcel_shipping_models.dart';
 import 'package:customer/models/parcel_weight_model.dart';
+import 'package:customer/models/section_model.dart';
 import 'package:customer/utils/parcel_pricing.dart';
 import 'package:customer/utils/parcel_receipt_pdf.dart' show ParcelAmounts;
 import 'package:flutter_test/flutter_test.dart';
@@ -396,6 +398,29 @@ void main() {
       expect(q.subTotal, 1100);
       expect(q.total, 1000 + 100 + 1500 + 5000);
       expect(ParcelPricing.withExtraCommission(quote, type: 'percent', value: 12.5).commission, 125);
+    });
+
+    test('added only while commissionAsExtra is on AND the section\'s commission is enabled', () {
+      // The live parcel section: {enable: true, type: "percentage", commission: "12"}.
+      AdminCommission? section(Map<String, dynamic> c) => SectionModel.fromJson({'id': 's', 'adminCommision': c}).adminCommision;
+      double? added({required bool asExtra, required AdminCommission? c}) {
+        final adjust = ParcelPricing.extraCommissionAdjust(
+          settings: ParcelPricingSettings(commissionAsExtra: asExtra),
+          sectionCommissionEnabled: c?.isEnabled,
+          type: c?.commissionType,
+          amount: c?.amount,
+        );
+        return adjust?.call(quote).commission;
+      }
+
+      final AdminCommission? live = section({'enable': true, 'type': 'percentage', 'commission': '12'});
+      expect(added(asExtra: true, c: live), 120);
+      expect(added(asExtra: false, c: live), isNull);
+      expect(added(asExtra: true, c: section({'enable': false, 'type': 'percentage', 'commission': '12'})), isNull);
+      expect(added(asExtra: true, c: section({'type': 'percentage', 'commission': '12'})), isNull);
+      expect(added(asExtra: true, c: null), isNull);
+      expect(added(asExtra: true, c: section({'enable': true, 'type': 'Fixed', 'commission': 150})), 150);
+      expect(added(asExtra: true, c: section({'enable': true, 'type': 'Percent', 'commission': '10'})), 100);
     });
 
     test('the section\'s type decides: a fixed commission is its value', () {

@@ -518,9 +518,12 @@ class BookParcelController extends GetxController {
       heightCm: heightCm,
       pickupMethod: pickupMethod.value,
       deliveryMethod: deliveryMethod.value,
-      adjust: settings.commissionAsExtra && commission?.isEnabled == true
-          ? (quote) => ParcelPricing.withExtraCommission(quote, type: commission?.commissionType, value: double.tryParse(commission?.amount?.toString() ?? ''))
-          : null,
+      adjust: ParcelPricing.extraCommissionAdjust(
+        settings: settings,
+        sectionCommissionEnabled: commission?.isEnabled,
+        type: commission?.commissionType,
+        amount: commission?.amount,
+      ),
     );
     options.addAll(carrierOffers);
     return options;

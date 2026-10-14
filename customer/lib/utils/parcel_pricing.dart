@@ -718,6 +718,22 @@ class ParcelPricing {
     return value;
   }
 
+  /// The adjustment that adds the parcel section's commission to every
+  /// delivery company offer, or null when none is added: only while
+  /// `settings/ParcelPricing.commissionAsExtra` is true AND the section's
+  /// commission is enabled (`sections/{id}.adminCommision.enable == true`).
+  /// Its `type` decides percentage or fixed ([withExtraCommission]).
+  static ParcelQuote Function(ParcelQuote quote)? extraCommissionAdjust({
+    required ParcelPricingSettings settings,
+    required bool? sectionCommissionEnabled,
+    required String? type,
+    required String? amount,
+  }) {
+    if (!settings.commissionAsExtra || sectionCommissionEnabled != true) return null;
+    final double? value = double.tryParse((amount ?? '').trim());
+    return (quote) => withExtraCommission(quote, type: type, value: value);
+  }
+
   /// [quote] with the parcel section's commission (`sections/{id}.adminCommision`,
   /// its [type] and [value]) added as an extra (`settings/ParcelPricing.commissionAsExtra`):
   /// a percentage is taken on the delivery company's base price
