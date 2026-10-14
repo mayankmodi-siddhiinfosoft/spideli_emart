@@ -33,6 +33,11 @@ class ParcelAmounts {
   final double options;
   final double smsCharge;
 
+  /// The amount each order tax applies to: [taxableAmount] (the commission
+  /// added as an extra left out), or subTotal - discount on an order that was
+  /// charged the tax on that commission (see [ParcelAmounts.of]).
+  final double taxedAmount;
+
   const ParcelAmounts({
     this.subTotal = 0,
     this.discount = 0,
@@ -42,17 +47,14 @@ class ParcelAmounts {
     this.scopeTax = 0,
     this.options = 0,
     this.smsCharge = 0,
+    this.taxedAmount = 0,
   });
 
   factory ParcelAmounts.of(ParcelOrderModel order) {
     final double sub = _number(order.subTotal);
     final double disc = _number(order.discount);
     final double fee = _number(order.platformFee);
-    final double taxable = taxableAmount(subTotal: sub, discount: disc, commission: order.extraCommission);
-    double orderTax = 0;
-    for (final TaxModel tax in order.taxSetting ?? const <TaxModel>[]) {
-      orderTax += Constant.getTaxValue(amount: taxable.toString(), taxModel: tax);
-    }
+    final double commission = order.extraCommission;
     double platformTax = 0;
     if (fee > 0) {
       for (final TaxModel tax in order.platformTax ?? const <TaxModel>[]) {
@@ -61,18 +63,36 @@ class ParcelAmounts {
     }
     final double scope = (order.parcelScopeTax ?? 0).toDouble();
     final double opts = order.optionsAmount;
-    final ParcelAmounts lines = ParcelAmounts(
-      subTotal: sub,
-      discount: disc,
-      orderTax: orderTax,
-      platformFee: fee > 0 ? fee : 0,
-      platformTax: platformTax,
-      scopeTax: scope.isFinite && scope > 0 ? scope : 0,
-      options: opts.isFinite && opts > 0 ? opts : 0,
-      smsCharge: order.smsChargeAmount.isFinite && order.smsChargeAmount > 0 ? order.smsChargeAmount : 0,
-    );
-    return platformTaxCharged(lines, order.chargedTotal) ? lines : lines.withoutPlatformTax();
+    ParcelAmounts taxedOn(double taxable) {
+      double orderTax = 0;
+      for (final TaxModel tax in order.taxSetting ?? const <TaxModel>[]) {
+        orderTax += Constant.getTaxValue(amount: taxable.toString(), taxModel: tax);
+      }
+      final ParcelAmounts lines = ParcelAmounts(
+        subTotal: sub,
+        discount: disc,
+        orderTax: orderTax,
+        platformFee: fee > 0 ? fee : 0,
+        platformTax: platformTax,
+        scopeTax: scope.isFinite && scope > 0 ? scope : 0,
+        options: opts.isFinite && opts > 0 ? opts : 0,
+        smsCharge: order.smsChargeAmount.isFinite && order.smsChargeAmount > 0 ? order.smsChargeAmount : 0,
+        taxedAmount: taxable,
+      );
+      return platformTaxCharged(lines, order.chargedTotal) ? lines : lines.withoutPlatformTax();
+    }
+
+    final ParcelAmounts lines = taxedOn(taxableAmount(subTotal: sub, discount: disc, commission: commission));
+    if (commission <= 0) return lines;
+    // A checkout before 14 Oct 2026 also taxed the commission added as an
+    // extra: when the charged total is exactly that, the lines stay as charged.
+    final ParcelAmounts taxedCommission = taxedOn(taxableAmount(subTotal: sub, discount: disc));
+    return chargedExactly(taxedCommission, order.chargedTotal) && !chargedExactly(lines, order.chargedTotal) ? taxedCommission : lines;
   }
+
+  /// Whether [chargedTotal] is the total of [lines] (to the cent).
+  static bool chargedExactly(ParcelAmounts lines, num? chargedTotal) =>
+      chargedTotal != null && chargedTotal.isFinite && (chargedTotal - lines.total).abs() < 0.005;
 
   /// The amount the order taxes apply to (customer `ParcelPricing.taxableAmount`):
   /// subTotal - coupon, less the commission added to the delivery company's
@@ -99,6 +119,7 @@ class ParcelAmounts {
         scopeTax: scopeTax,
         options: options,
         smsCharge: smsCharge,
+        taxedAmount: taxedAmount,
       );
 
   /// Every tax line: the order taxes and the platform fee's taxes.

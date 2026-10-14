@@ -57,6 +57,16 @@
         "priceBreakdown": {"carrierPrice": 1000, "commission": 100, "options": 500, "pickupCharge": 500, "deliveryCharge": 0, "total": 1789}
       },
       "total": 1789, "platformTax": 10, "platformShare": 210
+    },
+    {
+      "name": "commission as an extra on an order placed before 14 Oct 2026 (it was taxed): kept as charged",
+      "order": {
+        "id": "f7", "subTotal": "1100", "discount": "0",
+        "taxSetting": [{"title": "VAT", "type": "percentage", "tax": "10", "enable": true}],
+        "platformFee": "0", "platformTax": [],
+        "priceBreakdown": {"carrierPrice": 1000, "commission": 100, "options": 0, "total": 1210}
+      },
+      "total": 1210, "platformTax": 0, "platformShare": 0
     }
   ]
 }

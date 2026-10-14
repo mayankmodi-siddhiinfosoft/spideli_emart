@@ -40,7 +40,7 @@ class ParcelOrderDetailsController extends GetxController {
   /// Door / pickup-point charges (priceBreakdown.options), in the total.
   RxDouble options = 0.0.obs;
 
-  /// What each order tax applies to ([ParcelAmounts.taxableAmount]): the
+  /// What each order tax applies to ([ParcelAmounts.taxedAmount]): the
   /// commission added as an extra is never taxed.
   RxDouble taxableAmount = 0.0.obs;
 
@@ -52,8 +52,7 @@ class ParcelOrderDetailsController extends GetxController {
     subTotal.value = amounts.subTotal;
     discount.value = amounts.discount;
     taxAmount.value = amounts.orderTax;
-    taxableAmount.value = ParcelAmounts.taxableAmount(
-        subTotal: amounts.subTotal, discount: amounts.discount, commission: parcelOrder.value.extraCommission);
+    taxableAmount.value = amounts.taxedAmount;
     platformFee.value = amounts.platformFee;
     platformTaxAmount.value = amounts.platformTax;
     scopeTax.value = amounts.scopeTax;
