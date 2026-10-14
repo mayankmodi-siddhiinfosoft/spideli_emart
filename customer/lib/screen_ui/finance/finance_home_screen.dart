@@ -238,6 +238,9 @@ class _Products extends StatelessWidget {
     }
     final c = DsColors.of(context);
     String m(dynamic v) => FinanceMoney.format(FinanceSummary.intOf(v), s.currency);
+    final int lent = FinanceSummary.intOf(s.loans?['lentOutstanding']);
+    final int policies = FinanceSummary.intOf(s.insurance?['activePolicies']);
+    final int claims = FinanceSummary.intOf(s.insurance?['openClaims']);
     final rows = <Widget>[
       if (s.savings != null)
         FinListTile(
@@ -264,7 +267,9 @@ class _Products extends StatelessWidget {
           icon: Icons.handshake_outlined,
           iconTone: FinanceSummary.intOf(s.loans!['overdueCount']) > 0 ? DsTone.danger : DsTone.brand,
           title: "Loans".tr,
-          subtitle: '${"Lent, outstanding".tr} ${m(s.loans!['lentOutstanding'])}',
+          // The amount is what the customer still owes; what they lent is
+          // added only when there is some.
+          subtitle: lent > 0 ? '${"Still to repay".tr} · ${"Lent, outstanding".tr} ${m(lent)}' : "Still to repay".tr,
           amount: m(s.loans!['borrowedOutstanding']),
           chevron: true,
           onTap: () => Get.to(() => const LoansScreen()),
@@ -284,8 +289,7 @@ class _Products extends StatelessWidget {
           icon: Icons.health_and_safety_outlined,
           iconTone: DsTone.brand,
           title: "Insurance".tr,
-          subtitle:
-              '${FinanceSummary.intOf(s.insurance!['activePolicies'])} ${"active policies".tr} · ${FinanceSummary.intOf(s.insurance!['openClaims'])} ${"open claims".tr}',
+          subtitle: '$policies ${(policies == 1 ? "active policy" : "active policies").tr} · $claims ${(claims == 1 ? "open claim" : "open claims").tr}',
           chevron: true,
           onTap: () => Get.to(() => const InsuranceScreen()),
         ),

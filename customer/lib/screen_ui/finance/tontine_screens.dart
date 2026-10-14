@@ -441,7 +441,7 @@ class _TontineHero extends StatelessWidget {
       stats: [
         FinHeroStat("Frequency".tr, Frequency.label(t.frequency).tr),
         FinHeroStat("Members".tr, '${t.memberIds.length}/${t.membersLimit}'),
-        if (t.nextDueAt != null) FinHeroStat("Next contribution".tr, _date(t.nextDueAt)),
+        if (t.nextDueAt != null) FinHeroStat("Next payment".tr, _date(t.nextDueAt)),
       ],
     );
   }

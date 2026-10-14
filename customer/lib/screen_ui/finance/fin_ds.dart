@@ -309,15 +309,16 @@ class FinSurface extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = DsColors.of(context);
-    final box = Container(
+    final Widget content = Padding(padding: padding, child: child);
+    // Its own (transparent) Material inside the coloured box: list tiles,
+    // checkbox / switch / radio tiles and the surface's own tap paint their
+    // ink here, not on a Material the box would hide (a debug assertion).
+    return Container(
       decoration: BoxDecoration(color: c.isDark ? c.surfaceRaised : c.surface, borderRadius: FinSpace.br, border: Border.all(color: c.border)),
-      padding: padding,
-      child: child,
-    );
-    if (onTap == null) return box;
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(borderRadius: FinSpace.br, onTap: onTap, child: box),
+      child: Material(
+        type: MaterialType.transparency,
+        child: onTap == null ? content : InkWell(borderRadius: FinSpace.br, onTap: onTap, child: content),
+      ),
     );
   }
 }
@@ -495,7 +496,9 @@ class FinListTile extends StatelessWidget {
                   Text(title, style: DsTypography.bodyStrong.copyWith(color: c.textPrimary), maxLines: 2, overflow: TextOverflow.ellipsis),
                   if (subtitle != null && subtitle!.isNotEmpty) ...[
                     const DsGap(DsSpace.xxs),
-                    Text(subtitle!, style: DsTypography.caption.copyWith(color: c.textSecondary), maxLines: 2, overflow: TextOverflow.ellipsis),
+                    // Three lines: a row's subtitle often ends with the
+                    // detail that matters (a date, what is left to repay).
+                    Text(subtitle!, style: DsTypography.caption.copyWith(color: c.textSecondary), maxLines: 3, overflow: TextOverflow.ellipsis),
                   ],
                 ]),
               ),
