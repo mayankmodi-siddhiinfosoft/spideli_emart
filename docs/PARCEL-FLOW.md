@@ -426,7 +426,7 @@ TOTAL           = subTotal − discount + orderTax + platformFee + platformTax
                 → priceBreakdown.total  (what wallet / gateway / cash charges)
 ```
 
-VAT, coupons, commission and the driver's credit never apply to `fixedTax`, `options` or `smsCharge`. VAT never applies to the commission charged as an extra (`priceBreakdown.commission`): every reader that recomputes the order taxes (customer `ParcelAmounts`, driver `ParcelAmounts`, `_updateWalletAmount`, the driver's order details, wallet rows and the company owner's earnings) takes it out of the taxed amount the same way. An order placed before 14 Oct 2026 was taxed on that commission: when its `priceBreakdown.total` is exactly that total, `ParcelAmounts` keeps those lines, so it still reads as charged.
+VAT, coupons, commission and the driver's credit never apply to `fixedTax`, `options` or `smsCharge`. VAT never applies to the commission charged as an extra (`priceBreakdown.commission`): every reader that recomputes the order taxes (customer `ParcelAmounts`, driver `ParcelAmounts`, `_updateWalletAmount`, the driver's order details, wallet rows and the company owner's earnings) takes it out of the taxed amount the same way.
 
 **Worked example A: company parcel, Other city** (currency of region Yaounde-Cameroun, XAF):
 

@@ -90,9 +90,8 @@ class OwnerHomeController extends GetxController {
       double subTotal = double.tryParse(order.subTotal?.toString() ?? "0") ?? 0;
       double discount = double.tryParse(order.discount?.toString() ?? "0") ?? 0;
 
-      // The order taxes as the customer paid them (none on the commission
-      // added as an extra).
-      double taxTotal = ParcelAmounts.of(order).orderTax;
+      // The order taxes, not on the commission added as an extra.
+      double taxTotal = _calculateTax(order.taxSetting, ParcelAmounts.taxableAmount(subTotal: subTotal, discount: discount, commission: order.extraCommission), 0);
       double driverEarned = (subTotal - discount + taxTotal).clamp(0, double.infinity);
 
       earnings += driverEarned;

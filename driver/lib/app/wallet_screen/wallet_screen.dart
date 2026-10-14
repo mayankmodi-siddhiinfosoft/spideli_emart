@@ -464,10 +464,21 @@ class WalletScreen extends StatelessWidget {
             itemBuilder: (context, index) {
               ParcelOrderModel orderModel = list[index];
 
-              // subTotal - discount + the order taxes as the customer paid
-              // them (ParcelAmounts: none on the commission added as an extra).
-              final ParcelAmounts amounts = ParcelAmounts.of(orderModel);
-              final double totalAmount = amounts.subTotal - amounts.discount + amounts.orderTax;
+              double totalAmount = 0.0;
+              double totalTax = 0.0;
+              double subTotal = double.parse(orderModel.subTotal ?? '0.0') - double.parse(orderModel.discount ?? '0.0');
+              // The order taxes, not on the commission added as an extra.
+              final double taxable = ParcelAmounts.taxableAmount(
+                  subTotal: double.parse(orderModel.subTotal ?? '0.0'),
+                  discount: double.parse(orderModel.discount ?? '0.0'),
+                  commission: orderModel.extraCommission);
+
+              if (orderModel.taxSetting != null) {
+                for (var element in orderModel.taxSetting!) {
+                  totalTax = totalTax + Constant.calculateTax(amount: taxable.toString(), taxModel: element);
+                }
+              }
+              totalAmount = subTotal + totalTax;
 
               return _OrderEarningRow(
                 title: "Parcel Amount credited".tr,

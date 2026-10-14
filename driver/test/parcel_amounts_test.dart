@@ -132,17 +132,5 @@ void main() {
     // price only, and is then debited the commission (a fixed 100).
     expect(a.onlineCredit, 1200);
     expect(a.courierNet(100), 1100);
-    expect(a.taxedAmount, 1000);
-
-    // Placed before 14 Oct 2026 (the commission was taxed, total 1210): kept as charged.
-    final ParcelAmounts before = ParcelAmounts.of(ParcelOrderModel.fromJson({
-      'id': 'p10',
-      'subTotal': '1100',
-      'discount': '0',
-      'taxSetting': [tax('VAT', 'percentage', '10')],
-      'priceBreakdown': {'carrierPrice': 1000, 'commission': 100, 'total': 1210},
-    }));
-    expect(before.orderTax, 110);
-    expect(before.taxedAmount, 1100);
   });
 }

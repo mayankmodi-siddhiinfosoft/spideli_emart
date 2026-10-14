@@ -521,10 +521,11 @@ class ParcelTrackingService {
     subTotal = double.tryParse(orderModel.subTotal ?? '') ?? 0.0;
     discount = double.tryParse(orderModel.discount ?? '') ?? 0.0;
 
-    // The order taxes as the customer paid them (ParcelAmounts: none on the
-    // commission added as an extra).
-    final ParcelAmounts amounts = ParcelAmounts.of(orderModel);
-    totalTax = amounts.orderTax;
+    // Not on the commission added as an extra: the customer paid no tax on it.
+    final double taxable = ParcelAmounts.taxableAmount(subTotal: subTotal, discount: discount, commission: orderModel.extraCommission);
+    for (var element in orderModel.taxSetting ?? []) {
+      totalTax = totalTax + Constant.calculateTax(amount: taxable.toString(), taxModel: element);
+    }
 
     if ((orderModel.adminCommission ?? '').isNotEmpty) {
       adminComm = Constant.calculateAdminCommission(
@@ -546,7 +547,7 @@ class ParcelTrackingService {
     // (app-spec-parcel-pricing 3.2): paid online, they are credited with the
     // delivery charge; in cash the driver already holds them (they are not in
     // ParcelAmounts.platformShareOfCash).
-    final double options = amounts.options;
+    final double options = ParcelAmounts.of(orderModel).options;
     // = ParcelAmounts.onlineCredit (company reports read the same rule).
     totalAmount = ((subTotal - discount) + totalTax + options);
     if (!isCod) {
@@ -619,6 +620,7 @@ class ParcelTrackingService {
     // (ParcelAmounts), so the cash the driver collects does too, and they are
     // the platform's — as for a delivery order, where the cash total the
     // driver owes back includes the platform fee.
+    final ParcelAmounts amounts = ParcelAmounts.of(orderModel);
     final double platformFeeShare = amounts.platformFee + amounts.platformTax;
     if (isCod && platformFeeShare > 0) {
       WalletTransactionModel feeTransaction = WalletTransactionModel(

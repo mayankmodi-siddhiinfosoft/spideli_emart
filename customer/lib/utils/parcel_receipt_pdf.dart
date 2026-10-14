@@ -86,44 +86,31 @@ class ParcelAmounts {
     final double sub = _number(o.subTotal);
     final double disc = _number(o.discount);
     final double fee = _number(o.platformFee);
-    final double commission = o.extraCommission;
+    final double taxable = ParcelPricing.taxableAmount(subTotal: sub, discount: disc, commission: o.extraCommission);
+    double orderTax = 0;
+    for (final t in o.taxSetting ?? []) {
+      orderTax += Constant.calculateTax(amount: taxable.toString(), taxModel: t);
+    }
     double platformTax = 0;
     if (fee > 0) {
       for (final t in o.platformTax ?? []) {
         platformTax += Constant.calculateTax(amount: fee.toString(), taxModel: t);
       }
     }
+    final ParcelAmounts lines = ParcelAmounts(
+      subTotal: sub,
+      discount: disc,
+      platformFee: fee > 0 ? fee : 0,
+      orderTax: orderTax,
+      platformTax: platformTax,
+      scopeTax: o.scopeTaxAmount > 0 ? o.scopeTaxAmount : 0,
+      smsCharge: o.smsChargeAmount > 0 ? o.smsChargeAmount : 0,
+      options: o.optionsAmount,
+    );
     final dynamic charged = o.priceBreakdown?['total'];
     final num? chargedTotal = charged is num ? charged : num.tryParse((charged ?? '').toString().trim());
-    ParcelAmounts taxedOn(double taxable) {
-      double orderTax = 0;
-      for (final t in o.taxSetting ?? []) {
-        orderTax += Constant.calculateTax(amount: taxable.toString(), taxModel: t);
-      }
-      final ParcelAmounts lines = ParcelAmounts(
-        subTotal: sub,
-        discount: disc,
-        platformFee: fee > 0 ? fee : 0,
-        orderTax: orderTax,
-        platformTax: platformTax,
-        scopeTax: o.scopeTaxAmount > 0 ? o.scopeTaxAmount : 0,
-        smsCharge: o.smsChargeAmount > 0 ? o.smsChargeAmount : 0,
-        options: o.optionsAmount,
-      );
-      return platformTaxCharged(lines, chargedTotal) ? lines : lines.withoutPlatformTax();
-    }
-
-    final ParcelAmounts lines = taxedOn(ParcelPricing.taxableAmount(subTotal: sub, discount: disc, commission: commission));
-    if (commission <= 0) return lines;
-    // A checkout before 14 Oct 2026 also taxed the commission added as an
-    // extra: when the charged total is exactly that, the lines stay as charged.
-    final ParcelAmounts taxedCommission = taxedOn(ParcelPricing.taxableAmount(subTotal: sub, discount: disc));
-    return chargedExactly(taxedCommission, chargedTotal) && !chargedExactly(lines, chargedTotal) ? taxedCommission : lines;
+    return platformTaxCharged(lines, chargedTotal) ? lines : lines.withoutPlatformTax();
   }
-
-  /// Whether [chargedTotal] is the total of [lines] (to the cent).
-  static bool chargedExactly(ParcelAmounts lines, num? chargedTotal) =>
-      chargedTotal != null && chargedTotal.isFinite && (chargedTotal - lines.total).abs() < 0.005;
 
   /// Whether the customer was charged the platform fee's taxes of [lines]:
   /// false only when [chargedTotal] is the total without them (to the cent).
