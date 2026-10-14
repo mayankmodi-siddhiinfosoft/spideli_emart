@@ -2,19 +2,15 @@ import 'package:customer/constant/constant.dart';
 import 'package:customer/controllers/my_profile_controller.dart';
 import 'package:customer/screen_ui/change_password_screen/change_password_screen.dart';
 import 'package:customer/screen_ui/help_support_screen/help_support_screen.dart';
+import 'package:customer/screen_ui/multi_vendor_service/profile_screen/profile_actions.dart';
 import 'package:customer/screen_ui/on_demand_service/provider_inbox_screen.dart';
 import 'package:customer/screen_ui/notification_center/notification_center_screen.dart';
 import 'package:customer/screen_ui/on_demand_service/worker_inbox_screen.dart';
 import 'package:customer/service/inbox_unread_service.dart';
 import 'package:customer/widget/live_unread_badge.dart';
-import 'package:customer/themes/custom_dialog_box.dart';
 import 'package:customer/themes/ds/ds.dart';
-import 'package:in_app_review/in_app_review.dart';
 
 import '../../../controllers/theme_controller.dart';
-import '../../../service/fire_store_utils.dart';
-import '../../../themes/show_toast_dialog.dart';
-import '../../../utils/push_token_sync.dart';
 import '../../auth_screens/login_screen.dart';
 import '../cashback_screen/cashback_offers_list.dart';
 import '../change_language/change_language_screen.dart';
@@ -26,12 +22,10 @@ import '../edit_profile_screen/edit_profile_screen.dart';
 import '../gift_card/gift_card_screen.dart';
 import '../refer_friend_screen/refer_friend_screen.dart';
 
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get/get.dart';
-import 'package:share_plus/share_plus.dart';
 
 import '../terms_and_condition/terms_and_condition_screen.dart';
 import '../../subscriptions/business_account_screen.dart';
@@ -244,19 +238,8 @@ class ProfileScreen extends StatelessWidget {
                                 _tile(context, null, icon: Icons.group_add_outlined, "Refer a Friend".tr, () {
                                   Get.to(const ReferFriendScreen());
                                 }),
-                              _tile(context, null, icon: Icons.ios_share_rounded, "Share app".tr, () {
-                                SharePlus.instance.share(
-                                  ShareParams(
-                                    text:
-                                        '${'Check out spideli, the ultimate all-in-one multi-vendor eBusiness platform.'.tr} \n\n${'Google Play:'.tr} ${Constant.googlePlayLink} \n\n${'App Store:'.tr} ${Constant.appStoreLink}',
-                                    subject: 'Look what I made!'.tr,
-                                  ),
-                                );
-                              }),
-                              _tile(context, null, icon: Icons.star_outline_rounded, "Rate the app".tr, () {
-                                final InAppReview inAppReview = InAppReview.instance;
-                                inAppReview.requestReview();
-                              }),
+                              _tile(context, null, icon: Icons.ios_share_rounded, "Share app".tr, ProfileActions.shareApp),
+                              _tile(context, null, icon: Icons.star_outline_rounded, "Rate the app".tr, ProfileActions.rateApp),
                             ],
                           ),
 
@@ -286,33 +269,7 @@ class ProfileScreen extends StatelessWidget {
                                   ? _tile(context, null, icon: Icons.login_rounded, "Log In".tr, tone: DsTone.success, () {
                                       Get.offAll(const LoginScreen());
                                     })
-                                  : _tile(context, null, icon: Icons.logout_rounded, "Log out".tr, tone: DsTone.danger, showChevron: false, () {
-                                      showDialog(
-                                        context: context,
-                                        builder: (BuildContext context) {
-                                          return CustomDialogBox(
-                                            title: "Log out".tr,
-                                            descriptions: "Are you sure you want to log out? You will need to enter your credentials to log back in.".tr,
-                                            positiveString: "Log out".tr,
-                                            negativeString: "Cancel".tr,
-                                            positiveClick: () async {
-                                              // Clears users/{uid}.fcmToken only while it is still
-                                              // this phone's token (field-level). A whole-user save
-                                              // with '' wiped the token of a phone the customer had
-                                              // signed in on since.
-                                              await PushTokenSync.clearOnSignOut();
-                                              Constant.userModel = null;
-                                              await FirebaseAuth.instance.signOut();
-                                              Get.offAll(const LoginScreen());
-                                            },
-                                            negativeClick: () {
-                                              Get.back();
-                                            },
-                                            img: Image.asset('assets/images/ic_logout.gif', height: 50, width: 50),
-                                          );
-                                        },
-                                      );
-                                    }),
+                                  : _tile(context, null, icon: Icons.logout_rounded, "Log out".tr, tone: DsTone.danger, showChevron: false, () => ProfileActions.confirmLogout(context)),
                             ],
                           ),
 
@@ -325,36 +282,7 @@ class ProfileScreen extends StatelessWidget {
                                     label: "Delete Account".tr,
                                     expand: true,
                                     leading: SvgPicture.asset("assets/icons/ic_delete.svg", height: 20, width: 20, colorFilter: ColorFilter.mode(c.dangerStrong, BlendMode.srcIn)),
-                                    onPressed: () {
-                                      showDialog(
-                                        context: context,
-                                        builder: (BuildContext context) {
-                                          return CustomDialogBox(
-                                            title: "Delete Account".tr,
-                                            descriptions: "Are you sure you want to delete your account? This action is irreversible and will permanently remove all your data.".tr,
-                                            positiveString: "Delete".tr,
-                                            negativeString: "Cancel".tr,
-                                            positiveClick: () async {
-                                              ShowToastDialog.showLoader("Please wait...".tr);
-                                              await controller.deleteUserFromServer();
-                                              await FireStoreUtils.deleteUser().then((value) {
-                                                ShowToastDialog.closeLoader();
-                                                if (value == true) {
-                                                  ShowToastDialog.showToast("Account deleted successfully".tr);
-                                                  Get.offAll(const LoginScreen());
-                                                } else {
-                                                  ShowToastDialog.showToast("Contact Administrator".tr);
-                                                }
-                                              });
-                                            },
-                                            negativeClick: () {
-                                              Get.back();
-                                            },
-                                            img: Image.asset('assets/icons/delete_dialog.gif', height: 50, width: 50),
-                                          );
-                                        },
-                                      );
-                                    },
+                                    onPressed: () => ProfileActions.confirmDeleteAccount(context, controller),
                                   ),
                                 ),
                           Center(

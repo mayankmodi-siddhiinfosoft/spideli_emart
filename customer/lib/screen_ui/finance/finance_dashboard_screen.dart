@@ -1,19 +1,17 @@
-import 'package:customer/constant/constant.dart';
 import 'package:customer/screen_ui/finance/bill_screens.dart';
 import 'package:customer/screen_ui/finance/card_screens.dart';
 import 'package:customer/screen_ui/finance/coach_screens.dart';
 import 'package:customer/screen_ui/finance/fin_ds.dart';
 import 'package:customer/screen_ui/finance/finance_home_screen.dart';
+import 'package:customer/screen_ui/finance/finance_profile_tab.dart';
 import 'package:customer/screen_ui/finance/insurance_screens.dart';
 import 'package:customer/screen_ui/finance/intelligence_screens.dart';
 import 'package:customer/screen_ui/finance/investment_screens.dart';
-import 'package:customer/screen_ui/finance/kyc_screen.dart';
 import 'package:customer/screen_ui/finance/lending_screens.dart';
 import 'package:customer/screen_ui/finance/savings_screens.dart';
 import 'package:customer/screen_ui/finance/tontine_screens.dart';
 import 'package:customer/screen_ui/finance/transactions_screen.dart';
 import 'package:customer/screen_ui/finance/transfer_screens.dart';
-import 'package:customer/screen_ui/help_support_screen/help_support_screen.dart';
 import 'package:customer/service/finance_service.dart';
 import 'package:customer/themes/ds/ds.dart';
 import 'package:customer/utils/finance_rules.dart';
@@ -284,160 +282,6 @@ class FinanceInsightsTab extends StatelessWidget {
             ),
           ]);
         },
-      ),
-    );
-  }
-}
-
-// ------------------------------------------------------------------ profile
-
-/// Profile tab: who the user is to Spideli Finance (verification), their
-/// groups and wallets, their documents and help - and the way back to the
-/// other Spideli services.
-class FinanceProfileTab extends StatelessWidget {
-  const FinanceProfileTab({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return FinScaffold(
-      title: "Profile".tr,
-      showBack: false,
-      body: StreamBuilder<Map<String, dynamic>>(
-        stream: FinanceService.myProfile(),
-        builder: (context, snap) {
-          final String? status = snap.data?['kycStatus']?.toString();
-          final bool verified = (snap.data?['kycLevel']?.toString() ?? '').isNotEmpty;
-          final String shown = verified ? KycStatus.approved : (status ?? 'none');
-          // No verification status until the profile has loaded (not a
-          // "not started" flash), nor when it could not be read.
-          final bool known = snap.hasData;
-          final String? chip = known ? (shown == KycStatus.approved ? 'verified' : shown) : null;
-          final String? chipLabel = known ? KycStatus.label(verified ? KycStatus.approved : status).tr : null;
-          return FinBody(children: [
-            _ProfileHeader(status: chip, statusLabel: chipLabel, loading: !known && !snap.hasError),
-            FinSection(
-              title: "Account".tr,
-              divided: true,
-              children: [
-                FinListTile(
-                  icon: verified ? Icons.verified_user_outlined : Icons.badge_outlined,
-                  iconTone: !known ? DsTone.neutral : (verified ? DsTone.success : DsTone.warning),
-                  title: "Document verification".tr,
-                  subtitle: snap.hasError ? "Could not load your verification status.".tr : null,
-                  status: chip,
-                  statusLabel: chipLabel,
-                  chevron: true,
-                  onTap: () => Get.to(() => const KycScreen()),
-                ),
-                FinListTile(
-                  icon: Icons.diversity_3_outlined,
-                  title: "Groups".tr,
-                  subtitle: "Tontines, collective savings and loan groups".tr,
-                  chevron: true,
-                  onTap: () => Get.to(() => const FinanceGroupsScreen()),
-                ),
-                StreamBuilder<List<Map<String, dynamic>>>(
-                  stream: FinanceService.myAccounts(),
-                  builder: (context, accounts) {
-                    final String currencies =
-                        activeWallets(accounts.data ?? const []).map((w) => w['currency']?.toString() ?? '').where((c) => c.isNotEmpty).join(' · ');
-                    return FinListTile(
-                      icon: Icons.account_balance_wallet_outlined,
-                      title: "Wallets".tr,
-                      subtitle: currencies.isEmpty ? "Your wallet opens with your first deposit.".tr : '${"One per currency".tr}: $currencies',
-                      chevron: true,
-                      onTap: () => FinanceDashboardController.showTab(FinanceTab.wallet, orOpen: () => const TransactionsScreen()),
-                    );
-                  },
-                ),
-                FinListTile(
-                  icon: Icons.picture_as_pdf_outlined,
-                  title: "Account statement".tr,
-                  subtitle: "PDF of your transactions for a period".tr,
-                  chevron: true,
-                  onTap: () => shareFinanceStatement(context),
-                ),
-              ],
-            ),
-            FinSection(
-              title: "Help".tr,
-              divided: true,
-              children: [
-                FinListTile(
-                  icon: Icons.support_agent_rounded,
-                  title: "Help and support".tr,
-                  subtitle: "Chat with the Spideli team".tr,
-                  chevron: true,
-                  onTap: () => Get.to(() => HelpSupportScreen()),
-                ),
-                FinListTile(
-                  icon: Icons.apps_rounded,
-                  title: "Other Spideli services".tr,
-                  subtitle: "Restaurants, parcels, rides and more".tr,
-                  chevron: true,
-                  onTap: () => Get.back(),
-                ),
-              ],
-            ),
-          ]);
-        },
-      ),
-    );
-  }
-}
-
-/// The user, as Spideli Finance knows them: initials, name, contact and
-/// whether their identity is verified.
-class _ProfileHeader extends StatelessWidget {
-  /// The verification status, once known.
-  final String? status;
-  final String? statusLabel;
-  final bool loading;
-
-  const _ProfileHeader({required this.status, required this.statusLabel, required this.loading});
-
-  @override
-  Widget build(BuildContext context) {
-    final c = DsColors.of(context);
-    final user = Constant.userModel;
-    final String name = (user?.fullName() ?? '').trim();
-    final String contact = [
-      (user?.email ?? '').trim(),
-      [(user?.countryCode ?? '').trim(), (user?.phoneNumber ?? '').trim()].where((p) => p.isNotEmpty).join(' '),
-    ].where((p) => p.isNotEmpty).join(' · ');
-    final String initials = name.isEmpty ? '?' : name.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).take(2).map((w) => w[0].toUpperCase()).join();
-    return FinSurface(
-      padding: const EdgeInsets.all(DsSpace.lg),
-      child: Row(
-        children: [
-          Container(
-            width: 56,
-            height: 56,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(shape: BoxShape.circle, color: c.brandSoft),
-            child: Text(initials, style: DsTypography.title.copyWith(color: c.brandStrong)),
-          ),
-          const DsGap(DsSpace.md),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(name.isEmpty ? "Spideli Finance".tr : name, style: DsTypography.title.copyWith(color: c.textPrimary), maxLines: 1, overflow: TextOverflow.ellipsis),
-                if (contact.isNotEmpty) ...[
-                  const DsGap(DsSpace.xxs),
-                  Text(contact, style: DsTypography.caption.copyWith(color: c.textSecondary), maxLines: 2, overflow: TextOverflow.ellipsis),
-                ],
-                if (status != null && statusLabel != null) ...[
-                  const DsGap(DsSpace.sm),
-                  FinStatusChip(status: status!, label: statusLabel!),
-                ] else if (loading) ...[
-                  const DsGap(DsSpace.sm),
-                  DsShimmer(child: DsSkeleton.line(width: 96, height: 20)),
-                ],
-              ],
-            ),
-          ),
-        ],
       ),
     );
   }

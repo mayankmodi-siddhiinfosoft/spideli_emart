@@ -2503,4 +2503,9 @@ const Map<String, String> enUS = {
   "Could not open your files. Check that the app may access them, then try again.": "Could not open your files. Check that the app may access them, then try again.",
   "Remove this document?": "Remove this document?",
   "This application is no longer available.": "This application is no longer available.",
+  "Business account": "Business account",
+  "Payment methods": "Payment methods",
+  "Subscriptions": "Subscriptions",
+  "Store subscriptions": "Store subscriptions",
+  "Log In": "Log In",
 };

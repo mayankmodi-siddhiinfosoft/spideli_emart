@@ -2500,4 +2500,9 @@ const Map<String, String> arAR = {
   "Could not open your files. Check that the app may access them, then try again.": "تعذر فتح ملفاتك. تأكد من أن التطبيق يمكنه الوصول إليها، ثم حاول مرة أخرى.",
   "Remove this document?": "إزالة هذا المستند؟",
   "This application is no longer available.": "هذا الطلب لم يعد متاحًا.",
+  "Business account": "حساب الأعمال",
+  "Payment methods": "طرق الدفع",
+  "Subscriptions": "الاشتراكات",
+  "Store subscriptions": "اشتراكات المتاجر",
+  "Log In": "تسجيل الدخول",
 };
