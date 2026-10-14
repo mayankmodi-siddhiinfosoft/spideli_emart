@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show RenderAbstractViewport;
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 
@@ -470,20 +471,7 @@ class DsSegmentedTabs extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = DsColors.of(context);
-    if (scrollable) {
-      return SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          children: [
-            for (var i = 0; i < segments.length; i++)
-              Padding(
-                padding: EdgeInsetsDirectional.only(end: i == segments.length - 1 ? 0 : DsSpace.sm),
-                child: _ChipSegment(segment: segments[i], selected: i == index, onTap: () => onChanged(i)),
-              ),
-          ],
-        ),
-      );
-    }
+    if (scrollable) return _ScrollableSegments(segments: segments, index: index, onChanged: onChanged);
     return Container(
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(color: c.surfaceAlt, borderRadius: DsRadius.brPill),
@@ -514,6 +502,86 @@ class DsSegmentedTabs extends StatelessWidget {
             ],
           );
         },
+      ),
+    );
+  }
+}
+
+/// The chips of a scrollable [DsSegmentedTabs]. The selected chip is kept
+/// in view - when a screen opens on a later tab, and when a chip half out of
+/// view is chosen - by scrolling the row only, never the page around it.
+class _ScrollableSegments extends StatefulWidget {
+  final List<DsSegment> segments;
+  final int index;
+  final ValueChanged<int> onChanged;
+
+  const _ScrollableSegments({required this.segments, required this.index, required this.onChanged});
+
+  @override
+  State<_ScrollableSegments> createState() => _ScrollableSegmentsState();
+}
+
+class _ScrollableSegmentsState extends State<_ScrollableSegments> {
+  final ScrollController _controller = ScrollController();
+  final List<GlobalKey> _keys = [];
+
+  GlobalKey _keyOf(int i) {
+    while (_keys.length <= i) {
+      _keys.add(GlobalKey());
+    }
+    return _keys[i];
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _reveal(animate: false);
+  }
+
+  @override
+  void didUpdateWidget(_ScrollableSegments old) {
+    super.didUpdateWidget(old);
+    if (old.index != widget.index) _reveal(animate: true);
+  }
+
+  void _reveal({required bool animate}) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_controller.hasClients || widget.index < 0 || widget.index >= widget.segments.length) return;
+      final RenderObject? chip = _keyOf(widget.index).currentContext?.findRenderObject();
+      final RenderAbstractViewport? row = chip == null ? null : RenderAbstractViewport.maybeOf(chip);
+      if (chip == null || row == null) return;
+      final ScrollPosition p = _controller.position;
+      final double target = row.getOffsetToReveal(chip, 0.5).offset.clamp(p.minScrollExtent, p.maxScrollExtent);
+      if ((target - p.pixels).abs() < 1) return;
+      final Duration d = DsMotion.of(context, DsMotion.base);
+      if (animate && d > Duration.zero) {
+        _controller.animateTo(target, duration: d, curve: DsMotion.standard);
+      } else {
+        _controller.jumpTo(target);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      controller: _controller,
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          for (var i = 0; i < widget.segments.length; i++)
+            Padding(
+              key: _keyOf(i),
+              padding: EdgeInsetsDirectional.only(end: i == widget.segments.length - 1 ? 0 : DsSpace.sm),
+              child: _ChipSegment(segment: widget.segments[i], selected: i == widget.index, onTap: () => widget.onChanged(i)),
+            ),
+        ],
       ),
     );
   }
