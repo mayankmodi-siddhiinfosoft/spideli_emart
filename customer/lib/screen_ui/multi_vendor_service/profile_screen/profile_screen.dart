@@ -39,8 +39,6 @@ import '../../subscriptions/my_plan_screen.dart';
 import '../../subscriptions/my_store_subscriptions_screen.dart';
 import '../../subscriptions/saved_payment_methods_screen.dart';
 
-import 'package:customer/screen_ui/finance/fin_ds.dart';
-import 'package:customer/screen_ui/finance/finance_home_screen.dart';
 
 /// Archetype **H — profile / settings**: an identity header card followed by
 /// grouped setting rows, a destructive group and the app version.
@@ -149,15 +147,6 @@ class ProfileScreen extends StatelessWidget {
                             margin: _groupGap,
                             title: "Money & rewards".tr,
                             children: [
-                              // Spideli Finance keeps its own navy identity, as inside the module.
-                              if (Constant.userModel != null)
-                                DsAccentScope(
-                                  color: isDark ? FinColors.navyDark : FinColors.navy,
-                                  retheme: false,
-                                  child: _tile(context, null, icon: Icons.account_balance_outlined, "Spideli Finance".tr, subtitle: "Wallet, savings, loans, investments and more".tr, () {
-                                    Get.to(() => const FinanceHomeScreen());
-                                  }),
-                                ),
                               // "Subscriptions", as the website renamed it
                               // from "Order History Plans" (WEB spec §5,
                               // "Naming and layout"). The store-sold

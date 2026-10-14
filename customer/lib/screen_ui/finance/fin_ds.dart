@@ -130,7 +130,10 @@ class FinScaffold extends StatelessWidget {
   final Widget? body;
   final Widget? bottomBar;
 
-  const FinScaffold({super.key, required this.title, this.subtitle, this.actions, this.body, this.bottomBar});
+  /// False on a tab of the Finance dashboard: no back arrow.
+  final bool showBack;
+
+  const FinScaffold({super.key, required this.title, this.subtitle, this.actions, this.body, this.bottomBar, this.showBack = true});
 
   @override
   Widget build(BuildContext context) {
@@ -144,6 +147,7 @@ class FinScaffold extends StatelessWidget {
             subtitle: subtitle,
             actions: actions,
             maxContentWidth: DsLayout.contentMax,
+            showBack: showBack,
             backgroundColor: FinColors.page(context),
             bottomBar: bottomBar,
             body: body,

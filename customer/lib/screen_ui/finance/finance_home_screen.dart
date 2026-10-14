@@ -1,7 +1,6 @@
 import 'package:customer/screen_ui/finance/bill_screens.dart';
-import 'package:customer/screen_ui/finance/card_screens.dart';
-import 'package:customer/screen_ui/finance/coach_screens.dart';
 import 'package:customer/screen_ui/finance/fin_ds.dart';
+import 'package:customer/screen_ui/finance/finance_dashboard_screen.dart';
 import 'package:customer/screen_ui/finance/finance_ui.dart';
 import 'package:customer/screen_ui/finance/insurance_screens.dart';
 import 'package:customer/screen_ui/finance/investment_screens.dart';
@@ -18,11 +17,10 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:intl/intl.dart';
 
-/// Profile > Spideli Finance: the finance workflow around the user - the
-/// wallet, what is due, "My account" (document verification, statistics,
-/// groups, wallets) and the nine services: money transfer, payment, virtual
-/// card, collective savings, tontine, investment, loan, online insurance and
-/// the AI assistant. Everything shown is what the server recorded
+/// Spideli Finance > Home (the dashboard's first tab): the wallet, what is
+/// due, the totals per service and the latest activity. The services, the
+/// insights and the profile have their own tabs (FinanceDashboardScreen).
+/// Everything shown is what the server recorded
 /// (.claude/FINANCE-APP-CONTRACT.md):
 ///  - verification: users/{uid} `kycStatus` / `kycLevel`;
 ///  - balance: financial_accounts (the wallet);
@@ -47,12 +45,11 @@ class FinanceHomeScreen extends StatelessWidget {
             const _VerificationNotice(),
             _BalanceHero(summary: s),
             if (s != null) _Upcoming(summary: s),
-            const _MyAccount(),
-            const _Services(),
+            FinanceProducts(summary: s, loading: sumSnap.connectionState == ConnectionState.waiting, error: sumSnap.hasError),
             FinSection(
               title: "Recent activity".tr,
               actionLabel: "See all".tr,
-              onAction: () => Get.to(() => const TransactionsScreen()),
+              onAction: () => FinanceDashboardController.showTab(FinanceTab.wallet, orOpen: () => const TransactionsScreen()),
               padding: EdgeInsets.zero,
               children: const [_RecentActivity()],
             ),
@@ -131,7 +128,7 @@ class _BalanceHero extends StatelessWidget {
             FinAction(Icons.north_east_rounded, "Send".tr, () => Get.to(() => const TransfersScreen())),
             FinAction(Icons.receipt_outlined, "Pay bills".tr, () => Get.to(() => const BillsScreen())),
             FinAction(Icons.savings_outlined, "Save".tr, () => Get.to(() => const SavingsListScreen())),
-            FinAction(Icons.history_rounded, "History".tr, () => Get.to(() => const TransactionsScreen())),
+            FinAction(Icons.trending_up_rounded, "Invest".tr, () => Get.to(() => const InvestmentsScreen())),
           ]),
         );
       },
@@ -221,12 +218,12 @@ class _Upcoming extends StatelessWidget {
 }
 
 /// Every product the user holds, one aligned list (server totals).
-class _Products extends StatelessWidget {
+class FinanceProducts extends StatelessWidget {
   final FinanceSummary? summary;
   final bool loading;
   final bool error;
 
-  const _Products({required this.summary, required this.loading, required this.error});
+  const FinanceProducts({super.key, required this.summary, required this.loading, required this.error});
 
   @override
   Widget build(BuildContext context) {
@@ -315,10 +312,10 @@ class _RecentActivity extends StatelessWidget {
 }
 
 /// Money in and out per month, and the last 30 days by kind (server totals).
-class _CashFlow extends StatelessWidget {
+class FinanceCashFlow extends StatelessWidget {
   final FinanceSummary summary;
 
-  const _CashFlow({required this.summary});
+  const FinanceCashFlow({super.key, required this.summary});
 
   static String _kind(String key) => const {
         'deposits': 'Deposits',
@@ -360,160 +357,7 @@ class _CashFlow extends StatelessWidget {
   }
 }
 
-/// The nine services of the finance workflow, under its names.
-class _Services extends StatelessWidget {
-  const _Services();
-
-  @override
-  Widget build(BuildContext context) {
-    final groups = <(String, List<(IconData, String, Widget Function())>)>[
-      (
-        "Pay and send",
-        [
-          (Icons.north_east_rounded, "Money transfer", () => const TransfersScreen()),
-          (Icons.receipt_outlined, "Payment", () => const BillsScreen()),
-          (Icons.credit_card_outlined, "Virtual card", () => const CardsScreen()),
-        ]
-      ),
-      (
-        "Save and invest",
-        [
-          (Icons.savings_outlined, "Collective savings", () => const SavingsListScreen()),
-          (Icons.groups_2_outlined, "Tontine", () => const TontineListScreen()),
-          (Icons.trending_up_rounded, "Investment", () => const InvestmentsScreen()),
-        ]
-      ),
-      (
-        "Borrow, protect and get help",
-        [
-          (Icons.handshake_outlined, "Loan", () => const LoansScreen()),
-          (Icons.health_and_safety_outlined, "Online insurance", () => const InsuranceScreen()),
-          (Icons.auto_awesome_outlined, "AI assistant", () => const AiAssistantScreen()),
-        ]
-      ),
-    ];
-    final c = DsColors.of(context);
-    return FinSection(
-      title: "Services".tr,
-      padding: const EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.md, DsSpace.lg, DsSpace.lg),
-      children: [
-        for (final (gi, (name, items)) in groups.indexed) ...[
-          if (gi > 0) const DsGap(DsSpace.md),
-          Text(name.tr, style: DsTypography.labelSm.copyWith(color: c.textSecondary)),
-          const DsGap(DsSpace.sm),
-          FinActions(actions: [for (final (icon, label, page) in items) FinAction(icon, label.tr, () => Get.to(page))]),
-        ],
-      ],
-    );
-  }
-}
-
-/// The user at the centre of the finance workflow: document verification,
-/// statistics, groups and wallets.
-class _MyAccount extends StatelessWidget {
-  const _MyAccount();
-
-  @override
-  Widget build(BuildContext context) {
-    return FinSection(
-      title: "My account".tr,
-      divided: true,
-      children: [
-        StreamBuilder<Map<String, dynamic>>(
-          stream: FinanceService.myProfile(),
-          builder: (context, snap) {
-            final String? status = snap.data?['kycStatus']?.toString();
-            final bool verified = (snap.data?['kycLevel']?.toString() ?? '').isNotEmpty;
-            final String shown = verified ? KycStatus.approved : (status ?? 'none');
-            return FinListTile(
-              icon: verified ? Icons.verified_user_outlined : Icons.badge_outlined,
-              iconTone: verified ? DsTone.success : DsTone.warning,
-              title: "Document verification".tr,
-              status: shown == KycStatus.approved ? 'verified' : shown,
-              statusLabel: KycStatus.label(verified ? KycStatus.approved : status).tr,
-              chevron: true,
-              onTap: () => Get.to(() => const KycScreen()),
-            );
-          },
-        ),
-        FinListTile(
-          icon: Icons.query_stats_rounded,
-          title: "Statistics".tr,
-          subtitle: "Your money, cash flow and the last 30 days".tr,
-          chevron: true,
-          onTap: () => Get.to(() => const FinanceStatisticsScreen()),
-        ),
-        FinListTile(
-          icon: Icons.diversity_3_outlined,
-          title: "Groups".tr,
-          subtitle: "Tontines, collective savings and loan groups".tr,
-          chevron: true,
-          onTap: () => Get.to(() => const FinanceGroupsScreen()),
-        ),
-        StreamBuilder<List<Map<String, dynamic>>>(
-          stream: FinanceService.myAccounts(),
-          builder: (context, snap) {
-            final wallets = activeWallets(snap.data ?? const []);
-            final String currencies = wallets.map((w) => w['currency']?.toString() ?? '').where((c) => c.isNotEmpty).join(' · ');
-            return FinListTile(
-              icon: Icons.account_balance_wallet_outlined,
-              title: "Wallets".tr,
-              subtitle: currencies.isEmpty ? "Your wallet opens with your first deposit.".tr : '${"One per currency".tr}: $currencies',
-              chevron: true,
-              onTap: () => Get.to(() => const TransactionsScreen()),
-            );
-          },
-        ),
-      ],
-    );
-  }
-}
-
-/// My account > Statistics: the server's totals per service and the cash
-/// flow (month by month, and the last 30 days by kind).
-class FinanceStatisticsScreen extends StatelessWidget {
-  const FinanceStatisticsScreen({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return FinScaffold(
-      title: "Statistics".tr,
-      actions: [
-        DsIconButton(icon: Icons.picture_as_pdf_outlined, semanticLabel: "Download statement".tr, onPressed: () => shareFinanceStatement(context)),
-      ],
-      body: StreamBuilder<FinanceSummary?>(
-        stream: FinanceService.summary(),
-        builder: (context, snap) {
-          final s = snap.data;
-          return FinBody(children: [
-            _Products(summary: s, loading: snap.connectionState == ConnectionState.waiting, error: snap.hasError),
-            if (s != null && s.monthly.isNotEmpty) _CashFlow(summary: s),
-            FinSection(
-              divided: true,
-              children: [
-                FinListTile(
-                  icon: Icons.picture_as_pdf_outlined,
-                  title: "Account statement".tr,
-                  subtitle: "PDF of your transactions for a period".tr,
-                  chevron: true,
-                  onTap: () => shareFinanceStatement(context),
-                ),
-                FinListTile(
-                  icon: Icons.history_rounded,
-                  title: "Transaction history".tr,
-                  chevron: true,
-                  onTap: () => Get.to(() => const TransactionsScreen()),
-                ),
-              ],
-            ),
-          ]);
-        },
-      ),
-    );
-  }
-}
-
-/// My account > Groups: the groups the user saves, rotates and lends with.
+/// Profile > Groups: the groups the user saves, rotates and lends with.
 class FinanceGroupsScreen extends StatelessWidget {
   const FinanceGroupsScreen({super.key});
 

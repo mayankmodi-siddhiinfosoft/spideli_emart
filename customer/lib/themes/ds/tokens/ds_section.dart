@@ -27,7 +27,10 @@ enum DsSection {
   cab,
   parcel,
   rental,
-  onDemand;
+  onDemand,
+
+  /// Spideli Finance: its own navy identity (no Firestore palette).
+  finance;
 
   /// Map a `SectionModel.serviceTypeFlag` to a section.
   static DsSection fromServiceFlag(String? flag) {
@@ -44,6 +47,8 @@ enum DsSection {
         return DsSection.rental;
       case 'ondemand-service':
         return DsSection.onDemand;
+      case 'finance-service':
+        return DsSection.finance;
       default:
         return DsSection.none;
     }
@@ -71,6 +76,8 @@ enum DsSection {
         return isDark ? AppThemeData.carRentDark300 : AppThemeData.carRent300;
       case DsSection.onDemand:
         return isDark ? AppThemeData.onDemandDark300 : AppThemeData.onDemand300;
+      case DsSection.finance:
+        return isDark ? const Color(0xFF8DB4FF) : const Color(0xFF0B2A4A);
       case DsSection.none:
         return AppThemeData.primary300;
     }
@@ -91,6 +98,8 @@ enum DsSection {
         return isDark ? AppThemeData.carRentDark400 : AppThemeData.carRent400;
       case DsSection.onDemand:
         return isDark ? AppThemeData.onDemandDark300 : AppThemeData.onDemand400;
+      case DsSection.finance:
+        return isDark ? const Color(0xFFB5CEFF) : const Color(0xFF0B2A4A);
       case DsSection.none:
         final b = AppThemeData.primary300;
         return isDark ? Color.lerp(b, Colors.white, 0.22)! : Color.lerp(b, Colors.black, 0.28)!;
@@ -112,6 +121,8 @@ enum DsSection {
         return AppThemeData.carRent50;
       case DsSection.onDemand:
         return AppThemeData.onDemand50;
+      case DsSection.finance:
+        return const Color(0xFFE8EEF6);
       case DsSection.none:
         return AppThemeData.primary50;
     }
@@ -132,6 +143,8 @@ enum DsSection {
         return Icons.car_rental_rounded;
       case DsSection.onDemand:
         return Icons.home_repair_service_rounded;
+      case DsSection.finance:
+        return Icons.account_balance_wallet_rounded;
       case DsSection.none:
         return Icons.apps_rounded;
     }

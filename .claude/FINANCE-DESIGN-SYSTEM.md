@@ -75,27 +75,28 @@ Existing pieces kept and restyled by the accent:
   - money operations end in `FinancePaySheet`, where success shows only when the server confirms.
 - **Sheets:** short contextual tasks (amount entry, confirmation, details). Workflows get screens.
 
-### 4.1 The finance workflow (home structure)
+### 4.1 The finance workflow (Finance dashboard)
 
-The finance home follows the client's workflow diagram: the user in the
-centre, nine services around them. Tile names and module screen titles use
-the diagram's names.
+Spideli Finance is a service of the service list (`FinanceSection`): the
+admin's own section with `serviceTypeFlag: "finance-service"` when there is
+one, else a built-in "Spideli Finance" bubble (navy, wallet icon) - always on
+the circle and in "More". It is no longer in the Profile screen. It opens
+`FinanceDashboardScreen`: five tabs in a bottom bar, each built on first open
+with its own scroll position; Back on another tab returns to Home, Back on
+Home leaves Finance.
 
-| Diagram | Home | Opens |
+| Tab | Screen | Content |
 |---|---|---|
-| User: document verification | My account › Document verification | `KycScreen` |
-| User: statistics | My account › Statistics | `FinanceStatisticsScreen` (your money, cash flow, statement) |
-| User: group (and chat) | My account › Groups | `FinanceGroupsScreen` → tontines, collective savings, loan groups (no member chat yet) |
-| User: multi-currency wallet | Wallet hero + My account › Wallets | `TransactionsScreen` (one wallet per currency; no conversion yet) |
-| Money transfer | Services › Pay and send | `TransfersScreen` |
-| Payment (bills) | Services › Pay and send | `BillsScreen` |
-| Virtual card | Services › Pay and send | `CardsScreen` |
-| Collective savings | Services › Save and invest | `SavingsListScreen` (shared goals by invitation) |
-| Tontine | Services › Save and invest | `TontineListScreen` |
-| Investment (funds, funding, markets) | Services › Save and invest | `InvestmentsScreen` + "Funding and markets": `IntelligenceScreen(view: funding)`, `FinancingScreen`, `IntelligenceScreen(view: markets)` |
-| Loan (credit scoring) | Services › Borrow, protect and get help | `LoansScreen` |
-| Online insurance (buy, claims) | Services › Borrow, protect and get help | `InsuranceScreen` |
-| AI assistant (coach, simulator) | Services › Borrow, protect and get help | `AiAssistantScreen` → `CoachScreen`, return simulator, insurance premium |
+| Home | `FinanceHomeScreen` | wallet hero (Send, Pay bills, Save, Invest), coming up, your money, recent activity ("See all" → Wallet tab) |
+| Wallet | `TransactionsScreen(asTab: true)` | wallets per currency, search, filters, statement |
+| Services | `FinanceServicesTab` | the nine services, each with what it is for: Pay and send (money transfer, payment, virtual card), Save and invest (collective savings, tontine, investment), Borrow and protect (loan, online insurance), Get help (AI assistant) |
+| Insights | `FinanceInsightsTab` | cash flow, last 30 days, AI assistant, markets, statement |
+| Profile | `FinanceProfileTab` | identity header, document verification, groups, wallets, statement, help, other Spideli services |
+
+Diagram to screens: document verification → Profile; statistics → Insights
+(and "Your money" on Home); groups → Profile › Groups (`FinanceGroupsScreen`);
+multi-currency wallet → Wallet; Investment → `InvestmentsScreen` + "Funding
+and markets"; AI assistant → `AiAssistantScreen` (coach, simulators).
 
 Not built yet (they need a server contract first): IPO tracking, stocks and
 stock collections, group chat, wallet currency conversion, product payments,

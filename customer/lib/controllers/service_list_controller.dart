@@ -11,6 +11,8 @@ import 'package:customer/service/database_helper.dart';
 import 'package:customer/service/fire_store_utils.dart';
 import 'package:customer/utils/region_service.dart';
 import 'package:customer/utils/home_services.dart';
+import 'package:customer/utils/finance_section.dart';
+import 'package:customer/screen_ui/finance/finance_dashboard_screen.dart';
 import 'package:customer/constant/constant.dart';
 import 'package:customer/models/user_model.dart';
 import 'package:customer/models/currency_model.dart';
@@ -78,10 +80,12 @@ class ServiceListController extends GetxController {
     await RegionService.ensureLoaded();
     final List<String> customerRegions = RegionService.customerRegionIds;
 
+    // Spideli Finance is one of the services (FinanceSection).
+    sections = FinanceSection.withFinance(sections);
     sectionList.assignAll(sections);
 
     final (List<ServiceGroupModel> groups, Map<String, dynamic>? favouritesConfig, banners) = await (HomeServices.loadGroups(), HomeServices.loadFavouritesConfig(), HomeServices.loadBanners()).wait;
-    favouriteList.assignAll(HomeServices.favourites(sections, customerRegions: customerRegions, config: favouritesConfig));
+    favouriteList.assignAll(FinanceSection.onCircle(HomeServices.favourites(sections, customerRegions: customerRegions, config: favouritesConfig), sections));
     groupList.assignAll(HomeServices.group(sections, groups));
     topBanners.assignAll(banners.top);
     lowerBanners.assignAll(banners.lower);
@@ -106,6 +110,16 @@ class ServiceListController extends GetxController {
   }
 
   Future<void> onServiceTap(BuildContext context, SectionModel sectionModel) async {
+    // Spideli Finance opens its own dashboard; it is not a store-type
+    // section, so the selected section and its taxes stay as they are.
+    if (FinanceSection.isFinance(sectionModel)) {
+      if (auth.FirebaseAuth.instance.currentUser == null) {
+        Get.offAll(() => const LoginScreen());
+      } else {
+        await Get.to(() => const FinanceDashboardScreen());
+      }
+      return;
+    }
     try {
       ShowToastDialog.showLoader("Please wait...".tr);
       Constant.sectionConstantModel = sectionModel;

@@ -20,7 +20,10 @@ List<Map<String, dynamic>> activeWallets(List<Map<String, dynamic>> accounts) =>
 /// searchable, filterable history of ledger transactions (server-side
 /// filters, indexed; the search narrows what is loaded).
 class TransactionsScreen extends StatefulWidget {
-  const TransactionsScreen({super.key});
+  /// Shown as the Finance dashboard's Wallet tab (no back arrow).
+  final bool asTab;
+
+  const TransactionsScreen({super.key, this.asTab = false});
 
   @override
   State<TransactionsScreen> createState() => _TransactionsScreenState();
@@ -49,6 +52,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
     final c = DsColors.of(context);
     return FinScaffold(
       title: "Wallet".tr,
+      showBack: !widget.asTab,
       body: FinBody(
         children: [
           StreamBuilder<List<Map<String, dynamic>>>(
