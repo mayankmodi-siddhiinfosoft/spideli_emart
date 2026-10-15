@@ -874,7 +874,9 @@ class _TransactionTile extends StatelessWidget {
         : null;
     final DateTime? at = FinanceGroupService.toDate(t['createdAt']);
     return FinListTile(
-      icon: credit ? Icons.south_west_rounded : Icons.shopping_bag_outlined,
+      // A purchase shows a bag; money moved off the card (to the wallet, to
+      // another card) or a fee shows an outgoing arrow.
+      icon: credit ? Icons.south_west_rounded : (type == 'purchase' || type == 'authorization' ? Icons.shopping_bag_outlined : Icons.north_east_rounded),
       iconTone: status == 'declined' ? DsTone.danger : (credit ? DsTone.success : DsTone.neutral),
       title: (t['merchantName'] ?? '').toString().isNotEmpty ? t['merchantName'].toString() : CardLabels.transaction(type).tr,
       subtitle: [

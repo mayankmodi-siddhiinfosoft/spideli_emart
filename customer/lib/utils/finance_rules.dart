@@ -278,10 +278,16 @@ abstract final class FinanceErrors {
 abstract final class LedgerView {
   /// The signed amount for the user's accounts in [accountSides]
   /// (accountId -> normal side): positive = money in, negative = money out.
-  static int signedAmount(List<Map<String, dynamic>> lines, Map<String, String> accountSides) {
+  ///
+  /// With [uid], the user's standard wallets (`wallet_{uid}_{CUR}`, credit
+  /// side) count even when [accountSides] does not list them yet: a posting
+  /// that opens a wallet (a conversion's other currency) can arrive before
+  /// the list of accounts does, and its amount must not read 0.
+  static int signedAmount(List<Map<String, dynamic>> lines, Map<String, String> accountSides, {String? uid}) {
     int total = 0;
     for (final l in lines) {
-      final String? side = accountSides[l['accountId']?.toString()];
+      final String id = l['accountId']?.toString() ?? '';
+      final String? side = accountSides[id] ?? (uid != null && uid.isNotEmpty && id.startsWith('wallet_${uid}_') ? 'credit' : null);
       if (side == null) continue;
       final int amount = (l['amount'] as num?)?.toInt() ?? 0;
       total += l['direction'] == side ? amount : -amount;

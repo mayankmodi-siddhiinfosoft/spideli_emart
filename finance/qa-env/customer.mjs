@@ -29,6 +29,49 @@ if (cmd === 'transfer') {
   });
   const r = await new Client(from).commit(batchOf(p.writes, rec));
   console.log(r.ok ? `ok ${p.reference}` : `refused ${r.status} ${r.body.slice(0, 300)}`);
+} else if (cmd === 'goal-join') {
+  // The invitee accepts: memberIds += uid (appended), invitedIds -= uid.
+  const [who, goalId] = args;
+  const uid = uids[who];
+  const c = new Client(uid);
+  const g = (await c.get(`savings_goals/${goalId}`)).data;
+  const b = new (await import('../rules-test/lib/firestore-rest.js')).Batch();
+  b.update(`savings_goals/${goalId}`, { invitedIds: g.invitedIds.filter((x) => x !== uid), memberIds: [...g.memberIds, uid], updatedAt: SERVER_TIME });
+  const r = await c.commit(b);
+  console.log(r.ok ? 'ok' : `refused ${r.status} ${r.body.slice(0, 300)}`);
+} else if (cmd === 'tontine-join') {
+  // The invitee accepts (TontineWrites.respond): own member doc active + tontine memberIds += uid.
+  const [who, tid] = args;
+  const uid = uids[who];
+  const c = new Client(uid);
+  // An invitee cannot read the tontine (rules): like the app, arrayUnion.
+  const { Batch, union } = await import('../rules-test/lib/firestore-rest.js');
+  const b = new Batch();
+  b.update(`tontine_members/${tid}_${uid}`, { status: 'active', respondedAt: SERVER_TIME, joinedAt: SERVER_TIME });
+  b.update(`tontines/${tid}`, { memberIds: union(uid), updatedAt: SERVER_TIME });
+  const r = await c.commit(b);
+  console.log(r.ok ? 'ok' : `refused ${r.status} ${r.body.slice(0, 300)}`);
+} else if (cmd === 'tontine-pay') {
+  // A member's contribution to the collecting cycle (TontineWrites.contribute), from the wallet.
+  const [who, tid] = args;
+  const uid = uids[who];
+  const c = new Client(uid);
+  const { Batch, inc } = await import('../rules-test/lib/firestore-rest.js');
+  const t = (await c.get(`tontines/${tid}`)).data;
+  const cid = `${tid}_${t.currentCycle}`;
+  const cycle = (await c.get(`tontine_cycles/${cid}`)).data;
+  const amount = t.contributionAmount;
+  const completes = cycle.collectedAmount + amount >= cycle.expectedAmount;
+  const id = `${cid}_${uid}`;
+  const p = plan({ type: 'tontine_contribution', currency: t.currency, from: `wallet_${uid}_${t.currency}`, to: `tontine_${tid}`, amount, userIds: [uid], sourceKind: 'tontine_contributions', sourceId: id, createdBy: uid, description: t.name });
+  const writes = [
+    create(`tontine_contributions/${id}`, { id, tontineId: tid, cycleId: cid, cycleNumber: cycle.number, userId: uid, amount, currency: t.currency, status: 'paid', reference: p.reference, txId: p.txId, funding: 'wallet', paidAt: SERVER_TIME, createdAt: SERVER_TIME }),
+    ...p.writes,
+    { path: `tontine_cycles/${cid}`, op: 'update', data: { collectedAmount: inc(amount), ...(completes ? { status: 'payout_pending' } : {}), lastTxId: p.txId, updatedAt: SERVER_TIME } },
+    ...(completes ? [create(`tontine_payouts/${cid}`, { id: cid, tontineId: tid, cycleId: cid, cycleNumber: cycle.number, beneficiaryUserId: cycle.beneficiaryUserId, amount: cycle.expectedAmount, currency: t.currency, status: 'pending_approval', createdAt: SERVER_TIME })] : []),
+  ];
+  const r = await c.commit(batchOf(writes));
+  console.log(r.ok ? `ok ${p.reference}${completes ? ' (pot complete)' : ''}` : `refused ${r.status} ${r.body.slice(0, 300)}`);
 } else {
-  console.log('usage: node customer.mjs transfer FROM TO AMOUNT [NOTE]');
+  console.log('usage: node customer.mjs transfer FROM TO AMOUNT [NOTE] | goal-join WHO GOAL_ID | tontine-join WHO TID | tontine-pay WHO TID');
 }

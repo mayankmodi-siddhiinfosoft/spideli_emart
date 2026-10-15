@@ -2891,4 +2891,6 @@ const Map<String, String> arAR = {
   "If it reached Spideli Finance before the connection was lost, Try again shows it as done: nothing is ever paid twice.": "إذا وصلت العملية إلى Spideli Finance قبل انقطاع الاتصال، فستظهرها إعادة المحاولة كمكتملة: لا يُدفع أي مبلغ مرتين أبدًا.",
   "Money sent": "تم إرسال المال",
   "@name received the money.": "استلم @name المال.",
+  "This bill was not paid: the money is back in your wallet.": "لم تُدفع هذه الفاتورة: عادت الأموال إلى محفظتك.",
+  "Pot per cycle when full": "الصندوق لكل دورة عند اكتمال الأعضاء",
 };

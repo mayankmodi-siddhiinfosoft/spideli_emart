@@ -158,6 +158,98 @@ def transfer_reverse(tid, reason):
     patch(f'money_transfers/{tid}', {'status': 'reversed', 'reason': reason, 'completedAt': now()})
 
 
+def bill_complete(rid_, token=None):
+    r = get(f'utility_payment_requests/{rid_}')
+    assert r and r['status'] == 'processing', r
+    fields = {'status': 'completed', 'billerReference': 'CP-QA-' + rid(6).upper(), 'customerName': 'A. DIALLO', 'completedAt': now(), 'processedBy': ADMIN}
+    if token:
+        fields.update({'token': token, 'tokenLabel': 'Your electricity code', 'units': '48.5 kWh'})
+    patch(f'utility_payment_requests/{rid_}', fields)
+
+
+def bill_reverse(rid_, reason):
+    r = get(f'utility_payment_requests/{rid_}')
+    assert r and r['status'] == 'processing', r
+    reverse(r['txId'], reason)
+    patch(f'utility_payment_requests/{rid_}', {'status': 'reversed', 'reason': reason, 'completedAt': now(), 'processedBy': ADMIN})
+
+
+def card_issue(card_id):
+    c = get(f'virtual_cards/{card_id}')
+    assert c and c['status'] == 'requested', c
+    u = get(f'users/{c["userId"]}')
+    exp = now() + datetime.timedelta(days=3 * 365)
+    patch(f'virtual_cards/{card_id}', {'status': 'active', 'last4': str(random.randint(1000, 9999)), 'expiryMonth': exp.month, 'expiryYear': exp.year,
+                                        'cardholderName': f'{u["firstName"]} {u["lastName"]}'.upper(), 'network': 'visa', 'balance': 0, 'updatedAt': now()})
+
+
+def card_request_complete(req_id):
+    r = get(f'card_funding_requests/{req_id}')
+    assert r and r['status'] == 'pending', r
+    c = get(f'virtual_cards/{r["cardId"]}')
+    t = now()
+    if r['type'] == 'fund':
+        patch(f'virtual_cards/{r["cardId"]}', {'balance': c.get('balance', 0) + r['amount'], 'updatedAt': t})
+        kind = 'funding'
+    elif r['type'] == 'withdraw':
+        assert c.get('balance', 0) >= r['amount']
+        post('card_withdrawal', r['currency'], f'platform_{r["currency"]}', f'wallet_{r["userId"]}_{r["currency"]}', r['amount'], [r['userId']], {'kind': 'card_funding_requests', 'id': req_id}, 'Card balance back to the wallet')
+        patch(f'virtual_cards/{r["cardId"]}', {'balance': c['balance'] - r['amount'], 'updatedAt': t})
+        kind = 'withdrawal'
+    else:
+        raise SystemExit('card to card: not simulated')
+    put(f'card_transactions/{req_id}', {'userId': r['userId'], 'cardId': r['cardId'], 'type': kind, 'status': 'completed', 'amount': r['amount'], 'currency': r['currency'], 'createdAt': t})
+    patch(f'card_funding_requests/{req_id}', {'status': 'succeeded', 'completedAt': t, 'processedBy': ADMIN, 'updatedAt': t})
+
+
+def card_limits_apply(card_id):
+    patch(f'card_limit_settings/{card_id}', {'status': 'applied', 'appliedAt': now()})
+
+
+def card_purchase(card_id, amount, merchant):
+    """An issuer webhook: a card payment (the card's own money, no ledger posting)."""
+    c = get(f'virtual_cards/{card_id}')
+    assert c['balance'] >= amount
+    t = now()
+    patch(f'virtual_cards/{card_id}', {'balance': c['balance'] - amount, 'updatedAt': t})
+    put(f'card_transactions/qa_{rid()}', {'userId': c['userId'], 'cardId': card_id, 'type': 'purchase', 'status': 'completed', 'amount': amount, 'currency': c['currency'], 'merchantName': merchant, 'merchantCountry': 'FR', 'createdAt': t})
+
+
+def savings_withdrawal_complete(wid):
+    w = get(f'savings_withdrawals/{wid}')
+    assert w and w['status'] == 'requested', w
+    g = get(f'savings_goals/{w["goalId"]}')
+    assert g['status'] == 'active' and w['amount'] <= g['savedAmount']
+    tx, _ = post('savings_withdrawal', w['currency'], f'goal_{w["goalId"]}', f'wallet_{w["userId"]}_{w["currency"]}', w['amount'], [w['userId']], {'kind': 'savings_withdrawals', 'id': wid}, f'Withdrawal from {g["name"]}')
+    patch(f'savings_goals/{w["goalId"]}', {'savedAmount': g['savedAmount'] - w['amount'], 'lastTxId': tx, 'updatedAt': now()})
+    patch(f'savings_withdrawals/{wid}', {'status': 'completed', 'txId': tx, 'completedAt': now(), 'processedBy': ADMIN})
+
+
+def savings_withdrawal_reject(wid, reason):
+    patch(f'savings_withdrawals/{wid}', {'status': 'rejected', 'rejectionReason': reason, 'processedBy': ADMIN})
+
+
+def tontine_payout_approve(cycle_id):
+    """Admin approves the payout of a sole-admin beneficiary (admin spec 6.8)."""
+    p = get(f'tontine_payouts/{cycle_id}')
+    assert p and p['status'] == 'pending_approval', p
+    t = get(f'tontines/{p["tontineId"]}')
+    assert p['cycleNumber'] == t['currentCycle']
+    tx, ref = post('tontine_payout', p['currency'], f'tontine_{p["tontineId"]}', f'wallet_{p["beneficiaryUserId"]}_{p["currency"]}', p['amount'], [p['beneficiaryUserId']], {'kind': 'tontine_payouts', 'id': cycle_id}, f'{t["name"]} - cycle {p["cycleNumber"]}')
+    ts = now()
+    patch(f'tontine_payouts/{cycle_id}', {'status': 'paid', 'txId': tx, 'reference': ref, 'approvedBy': ADMIN, 'approvedAt': ts, 'paidAt': ts, 'updatedAt': ts})
+    patch(f'tontine_cycles/{cycle_id}', {'status': 'paid', 'paidAt': ts, 'updatedAt': ts})
+    n = p['cycleNumber']
+    count = len(t['memberIds'])
+    if n < count:
+        nxt = get(f'tontine_cycles/{p["tontineId"]}_{n + 1}')
+        patch(f'tontine_cycles/{p["tontineId"]}_{n + 1}', {'status': 'collecting', 'updatedAt': ts})
+        due = datetime.datetime.strptime(nxt['dueDate'][:19], '%Y-%m-%dT%H:%M:%S')
+        patch(f'tontines/{p["tontineId"]}', {'currentCycle': n + 1, 'nextDueAt': due, 'updatedAt': ts})
+    else:
+        patch(f'tontines/{p["tontineId"]}', {'status': 'completed', 'completedAt': ts, 'updatedAt': ts})
+
+
 if __name__ == '__main__':
     cmd, args = sys.argv[1], sys.argv[2:]
     {
@@ -165,6 +257,15 @@ if __name__ == '__main__':
         'withdrawal-fail': lambda: withdrawal_fail(args[0], args[1]),
         'reverse': lambda: print(reverse(args[0], args[1])),
         'transfer-lock': lambda: transfer_lock(args[0]),
+        'tontine-payout-approve': lambda: tontine_payout_approve(args[0]),
+        'savings-withdrawal-complete': lambda: savings_withdrawal_complete(args[0]),
+        'savings-withdrawal-reject': lambda: savings_withdrawal_reject(args[0], args[1]),
+        'card-issue': lambda: card_issue(args[0]),
+        'card-request-complete': lambda: card_request_complete(args[0]),
+        'card-limits-apply': lambda: card_limits_apply(args[0]),
+        'card-purchase': lambda: card_purchase(args[0], int(args[1]), args[2]),
+        'bill-complete': lambda: bill_complete(args[0], args[1] if len(args) > 1 else None),
+        'bill-reverse': lambda: bill_reverse(args[0], args[1]),
         'transfer-complete': lambda: transfer_complete(args[0]),
         'transfer-cancel': lambda: transfer_cancel(args[0]),
         'transfer-reverse': lambda: transfer_reverse(args[0], args[1]),

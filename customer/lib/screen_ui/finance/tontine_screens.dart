@@ -549,9 +549,12 @@ class _TontineHero extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = tontine;
+    // While forming, the pot the members agreed to (every place filled), as
+    // in the creation summary; once started, the pot of the actual members.
+    final bool forming = t.isForming;
     return FinHero(
-      label: "Pot per cycle".tr,
-      amount: FinanceMoney.format(t.potPerCycle, t.currency),
+      label: (forming ? "Pot per cycle when full" : "Pot per cycle").tr,
+      amount: FinanceMoney.format(forming ? t.contributionAmount * t.membersLimit : t.potPerCycle, t.currency),
       caption: '${"Amount per member, per cycle".tr}: ${FinanceMoney.format(t.contributionAmount, t.currency)}',
       trailing: FinStatusChip(status: _st(t.status), label: Tontine.statusLabel(t.status).tr, icon: true),
       stats: [

@@ -510,7 +510,13 @@ class BillConfirmScreen extends StatelessWidget {
         return reply;
       },
     );
-    if (requestId != null) Get.off(() => BillPaymentScreen(requestId: requestId!, config: config));
+    if (requestId != null) {
+      // The payment page replaces this confirmation AND the form below it:
+      // Back returns to the bills page, never to a filled form that invites
+      // paying the same bill twice.
+      Get.back();
+      Get.off(() => BillPaymentScreen(requestId: requestId!, config: config));
+    }
   }
 
   @override
@@ -621,6 +627,7 @@ class _BillPaymentScreenState extends State<BillPaymentScreen> {
           _TokenCard(label: tokenLabel.isEmpty ? "Your code".tr : tokenLabel, token: token, units: (p['units'] ?? '').toString()),
         if (track != null) FinSection(title: "Status".tr, padding: const EdgeInsets.all(DsSpace.lg), children: [track]),
         if (status == 'processing') FinNotice("Your payment was received. Spideli Finance is paying the biller; this page updates when it is done.".tr),
+        if (status == 'reversed') FinNotice("This bill was not paid: the money is back in your wallet.".tr),
         FinSection(
           title: "Details".tr,
           divided: true,

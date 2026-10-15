@@ -2894,4 +2894,6 @@ const Map<String, String> enUS = {
   "If it reached Spideli Finance before the connection was lost, Try again shows it as done: nothing is ever paid twice.": "If it reached Spideli Finance before the connection was lost, Try again shows it as done: nothing is ever paid twice.",
   "Money sent": "Money sent",
   "@name received the money.": "@name received the money.",
+  "This bill was not paid: the money is back in your wallet.": "This bill was not paid: the money is back in your wallet.",
+  "Pot per cycle when full": "Pot per cycle when full",
 };

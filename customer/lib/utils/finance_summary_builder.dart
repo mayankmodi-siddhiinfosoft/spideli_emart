@@ -186,7 +186,7 @@ abstract final class FinanceSummaryBuilder {
       final DateTime? at = toDate(t['createdAt']);
       if (at == null) continue;
       final lines = ((t['lines'] as List?) ?? const []).whereType<Map>().map((l) => Map<String, dynamic>.from(l)).toList();
-      final int signed = LedgerView.signedAmount(lines, sides);
+      final int signed = LedgerView.signedAmount(lines, sides, uid: uid);
       if (signed == 0) continue;
       if (!at.isBefore(from12)) {
         final String key = '${at.year}-${at.month.toString().padLeft(2, '0')}';

@@ -274,6 +274,9 @@ class _TransactionListState extends State<TransactionList> {
     if (!mounted) return;
     _generation++;
     _docs.clear();
+    // The user's accounts too: the new posting may have opened one (the
+    // other currency's wallet of a conversion), whose lines would read 0.
+    _sides = {};
     _more = true;
     _searched = 0;
     _load();
@@ -418,7 +421,7 @@ class _TransactionListState extends State<TransactionList> {
 
   Widget _row(BuildContext context, Map<String, dynamic> t) {
     final lines = ((t['lines'] as List?) ?? const []).map((l) => Map<String, dynamic>.from(l as Map)).toList();
-    final int signed = LedgerView.signedAmount(lines, _sides);
+    final int signed = LedgerView.signedAmount(lines, _sides, uid: FinanceService.uid);
     final String currency = t['currency']?.toString() ?? '';
     final bool reversed = t['status'] == 'reversed';
     final String description = (t['description'] ?? '').toString();

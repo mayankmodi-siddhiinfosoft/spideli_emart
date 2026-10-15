@@ -176,7 +176,7 @@ def seed_zone():
 
 # ---------------------------------------------------------------- finance
 WALLET = {
-    'currencies': ['XAF', 'EUR'],
+    'currencies': ['XAF', 'EUR', 'USD'],
     # Gateways need sandbox credentials (settings/*); without them the app
     # shows that no payment method is available for the region.
     'deposit': {'enabled': True, 'methods': ['mobile_money', 'card'], 'min': {'XAF': 500}, 'max': {'XAF': 2000000}},
@@ -190,7 +190,7 @@ WALLET = {
         'feeMax': {'XAF': 5000},
         'delay': 'Within 24 hours',
     },
-    'convert': {'enabled': True, 'currencies': ['XAF', 'EUR'], 'feePercent': 1, 'maxRateAgeHours': 48},
+    'convert': {'enabled': True, 'currencies': ['XAF', 'EUR', 'USD'], 'feePercent': 1, 'maxRateAgeHours': 48},
     'security': {'reauthAbove': {'XAF': 100000, 'EUR': 15000}},
 }
 
@@ -251,7 +251,7 @@ def seed_accounts(uids):
         })
         put(f'financial_accounts/{wallet}', {'id': wallet, 'kind': 'wallet', 'userId': uid, 'currency': 'XAF', 'balance': opening, 'normalSide': 'credit', 'status': 'active', 'lastTxId': tx, 'createdAt': NOW, 'updatedAt': NOW})
         total += opening
-    for cur, balance in [('XAF', -total), ('EUR', 0)]:
+    for cur, balance in [('XAF', -total), ('EUR', 0), ('USD', 0)]:
         put(f'financial_accounts/platform_{cur}', {'id': f'platform_{cur}', 'kind': 'platform', 'currency': cur, 'balance': balance, 'normalSide': 'credit', 'status': 'active', 'lastTxId': '', 'createdAt': NOW, 'updatedAt': NOW})
 
 
