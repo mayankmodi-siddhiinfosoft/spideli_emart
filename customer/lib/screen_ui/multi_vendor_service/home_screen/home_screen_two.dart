@@ -199,7 +199,7 @@ class HomeScreenTwo extends StatelessWidget {
                       controller.isListView.value = false;
                     },
                     onScan: () {
-                      Get.to(const ScanQrCodeScreen());
+                      Get.to(const ScanQrCodeScreen(), arguments: {"vendorList": controller.allNearestRestaurant});
                     },
                   ),
                 ),

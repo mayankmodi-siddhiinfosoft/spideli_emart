@@ -16,9 +16,12 @@ import 'package:customer/screen_ui/location_enable_screens/address_list_screen.d
 import 'package:customer/screen_ui/multi_vendor_service/advertisement_screens/all_advertisement_screen.dart';
 import 'package:customer/screen_ui/multi_vendor_service/cart_screen/cart_screen.dart';
 import 'package:customer/screen_ui/multi_vendor_service/home_screen/category_restaurant_screen.dart';
+import 'package:customer/screen_ui/multi_vendor_service/home_screen/home_screen.dart' show MapView;
 import 'package:customer/screen_ui/multi_vendor_service/home_screen/restaurant_list_screen.dart' show RestaurantListScreen;
 import 'package:customer/screen_ui/multi_vendor_service/home_screen/view_all_category_screen.dart';
+import 'package:customer/screen_ui/multi_vendor_service/home_screen/widgets/store_widgets.dart' show HomeSearchToolBar;
 import 'package:customer/screen_ui/multi_vendor_service/restaurant_details_screen/restaurant_details_screen.dart';
+import 'package:customer/screen_ui/multi_vendor_service/scan_qrcode_screen/scan_qr_code_screen.dart';
 import 'package:customer/screen_ui/multi_vendor_service/search_screen/search_screen.dart';
 import 'package:customer/screen_ui/notification_center/notification_bell.dart';
 import 'package:customer/screen_ui/service_home_screen/service_list_screen.dart';
@@ -42,7 +45,9 @@ import 'package:customer/utils/utils.dart';
 /// Archetype A – e-commerce storefront. Gradient hero (account + address +
 /// cart) with the Delivery/TakeAway toggle in the overlap card, then category
 /// rail, banners, highlights, new arrivals, brands, category shelves and
-/// stores. The search bar stays docked at the bottom.
+/// stores. The list / map / search / scan actions float at the bottom right
+/// as on the multivendor homes ([HomeSearchToolBar]); map view shows the
+/// stores on the map with their cards (the multivendor [MapView]).
 class HomeECommerceScreen extends StatelessWidget {
   const HomeECommerceScreen({super.key});
 
@@ -63,8 +68,10 @@ class HomeECommerceScreen extends StatelessWidget {
         final bool hasAds = controller.advertisementList.isNotEmpty;
         final bool hasBanner = controller.bannerModel.isNotEmpty;
         final bool hasBottomBanner = controller.bannerBottomModel.isNotEmpty;
+        // Read unconditionally so this GetX observer always tracks it.
+        final bool isListView = controller.isListView.value;
 
-        return DsScaffold.hero(
+        final Widget storefront = DsScaffold.hero(
           onBack: () {
             Get.offAll(const ServiceListScreen());
           },
@@ -128,16 +135,6 @@ class HomeECommerceScreen extends StatelessWidget {
               () => OrderTypeToggle(value: controller.selectedOrderTypeValue.value, isDark: context.dsIsDark, onChanged: (value) => controller.changeOrderType(context, value)),
             ),
           ),
-          bottomBar:
-              isLoading
-                  ? null
-                  : BottomSearchBar(
-                    isDark: context.dsIsDark,
-                    hint: 'Search the store, item and more...'.tr,
-                    onTap: () {
-                      Get.to(const SearchScreen(), arguments: {"vendorList": controller.allNearestRestaurant});
-                    },
-                  ),
           slivers:
               isLoading
                   ? const [DsSliverResponsive(top: DsSpace.xl, sliver: SliverToBoxAdapter(child: _HomeSkeleton()))]
@@ -441,7 +438,44 @@ class HomeECommerceScreen extends StatelessWidget {
                         ),
                       ),
                     ),
+                    // Room for the floating buttons, so they never cover the
+                    // last stores in the list.
+                    const SliverToBoxAdapter(child: SizedBox(height: HomeSearchToolBar.reservedHeight)),
                   ],
+        );
+
+        return Stack(
+          children: [
+            Positioned.fill(
+              child:
+                  isLoading || isListView
+                      ? storefront
+                      : ColoredBox(
+                        color: c.background,
+                        child: Padding(padding: EdgeInsets.only(top: MediaQuery.of(context).viewPadding.top), child: MapView(source: controller)),
+                      ),
+            ),
+            if (!isLoading)
+              HomeSearchToolBar.overlay(
+                context,
+                HomeSearchToolBar(
+                  hint: 'Search the store, item and more...'.tr,
+                  onSearch: () {
+                    Get.to(const SearchScreen(), arguments: {"vendorList": controller.allNearestRestaurant});
+                  },
+                  isListView: isListView,
+                  onList: () {
+                    controller.isListView.value = true;
+                  },
+                  onMap: () {
+                    controller.isListView.value = false;
+                  },
+                  onScan: () {
+                    Get.to(const ScanQrCodeScreen(), arguments: {"vendorList": controller.allNearestRestaurant});
+                  },
+                ),
+              ),
+          ],
         );
       },
     );

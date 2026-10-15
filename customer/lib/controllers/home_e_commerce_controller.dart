@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
+import 'package:customer/controllers/map_view_controller.dart';
 import 'package:customer/models/advertisement_model.dart';
 import 'package:customer/models/banner_model.dart';
 import 'package:customer/models/brands_model.dart';
@@ -15,7 +16,7 @@ import '../service/database_helper.dart';
 import '../themes/custom_dialog_box.dart';
 import '../utils/wholesale_pricing.dart';
 
-class HomeECommerceController extends GetxController {
+class HomeECommerceController extends GetxController implements StoreMapSource {
   final CartProvider cartProvider = CartProvider();
 
   Future<void> getCartData() async {
@@ -86,6 +87,7 @@ class HomeECommerceController extends GetxController {
   RxList<VendorCategoryModel> vendorCategoryModel = <VendorCategoryModel>[].obs;
   RxList<VendorCategoryModel> categoryWiseProductList = <VendorCategoryModel>[].obs;
 
+  @override
   RxList<VendorModel> allNearestRestaurant = <VendorModel>[].obs;
   RxList<VendorModel> newArrivalRestaurantList = <VendorModel>[].obs;
   RxList<AdvertisementModel> advertisementList = <AdvertisementModel>[].obs;
@@ -163,8 +165,10 @@ class HomeECommerceController extends GetxController {
     await getFavouriteRestaurant();
   }
 
+  @override
   RxList<FavouriteModel> favouriteList = <FavouriteModel>[].obs;
 
+  @override
   Future<void> getFavouriteRestaurant() async {
     if (Constant.userModel?.id != null) {
       await FireStoreUtils.getFavouriteRestaurant().then((value) {

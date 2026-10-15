@@ -5,15 +5,29 @@ import 'package:flutter_map/flutter_map.dart' as flutterMap;
 import 'package:get/get.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:latlong2/latlong.dart' as location;
+import '../models/favourite_model.dart';
+import '../models/vendor_model.dart';
 import '../screen_ui/multi_vendor_service/restaurant_details_screen/restaurant_details_screen.dart';
 import 'food_home_controller.dart';
+
+/// What the home's map view needs from the home that shows it: the stores
+/// near the customer and their favourites. The multivendor (food) and
+/// e-commerce home controllers both provide it.
+abstract class StoreMapSource {
+  RxList<VendorModel> get allNearestRestaurant;
+  RxList<FavouriteModel> get favouriteList;
+  Future<void> getFavouriteRestaurant();
+}
 
 class MapViewController extends GetxController {
   GoogleMapController? mapController;
   BitmapDescriptor? parkingMarker;
   BitmapDescriptor? currentLocationMarker;
 
-  FoodHomeController homeController = Get.find<FoodHomeController>();
+  /// The home whose stores are pinned (the food home when none is given).
+  final StoreMapSource homeController;
+
+  MapViewController({StoreMapSource? source}) : homeController = source ?? Get.find<FoodHomeController>();
   Image? departureOsmIcon; //OSM
 
   RxList<flutterMap.Marker> osmMarker = <flutterMap.Marker>[].obs;

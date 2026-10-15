@@ -299,7 +299,7 @@ class HomeScreen extends StatelessWidget {
                       controller.update();
                     },
                     onScan: () {
-                      Get.to(const ScanQrCodeScreen());
+                      Get.to(const ScanQrCodeScreen(), arguments: {"vendorList": controller.allNearestRestaurant});
                     },
                   ),
                 ),
@@ -1257,13 +1257,19 @@ class _StoryVendorTag extends StatelessWidget {
 
 /// Map mode: the map stays edge-to-edge and untouched; the store carousel
 /// floating above it is restyled as DS cards.
+///
+/// [source] is the home whose stores it pins (the food home when omitted;
+/// the e-commerce home passes its own). Each map owns its controller, so a
+/// map of one service never shows another service's stores.
 class MapView extends StatelessWidget {
-  const MapView({super.key});
+  final StoreMapSource? source;
+  const MapView({super.key, this.source});
 
   @override
   Widget build(BuildContext context) {
-    return GetX(
-      init: MapViewController(),
+    return GetX<MapViewController>(
+      init: MapViewController(source: source),
+      global: false,
       builder: (controller) {
         // The customer's chosen location may carry no coordinates at all
         // (a manually typed address), so the map must not read through it.
