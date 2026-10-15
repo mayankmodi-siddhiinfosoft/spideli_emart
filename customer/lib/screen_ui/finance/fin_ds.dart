@@ -359,6 +359,18 @@ abstract final class FinPrivacy {
 
   static void toggle() => hidden.value = !hidden.value;
 
+  /// Every amount inside [text] masked ("Return +4.3 % · +4 300 XAF" ->
+  /// "Return •• % · •••••• XAF"): captions and list lines follow the eye too.
+  static String maskAll(String text) {
+    final String plain = text.replaceAll(RegExp('[\u2066-\u2069]'), '');
+    return plain
+        .replaceAllMapped(RegExp(r'[+\-−]?\d[\d\s\u00a0\u202f.,]*\s?([A-Z]{3})\b'), (m) => '•••••• ${m.group(1)}')
+        .replaceAllMapped(RegExp(r'[+\-−]?\d+(?:[.,]\d+)?\s?%'), (_) => '•• %');
+  }
+
+  /// [child] rebuilt when the eye is toggled ([hidden] is its state).
+  static Widget watch(Widget Function(bool hidden) child) => ValueListenableBuilder<bool>(valueListenable: hidden, builder: (_, h, __) => child(h));
+
   /// "245 000 XAF" -> "•••••• XAF": the currency stays, the figures go.
   static String mask(String value) {
     final String plain = value.replaceAll(RegExp('[\u2066-\u2069]'), '');
@@ -691,9 +703,14 @@ class FinListTile extends StatelessWidget {
   /// Replaces the icon square (a date badge, an avatar).
   final Widget? leading;
 
+  /// The amount and the amounts in the subtitle follow the privacy eye of
+  /// the balance card (rows of the Home and Wallet tabs).
+  final bool private;
+
   const FinListTile({
     super.key,
     this.leading,
+    this.private = false,
     required this.icon,
     this.iconTone = DsTone.neutral,
     required this.title,
@@ -713,7 +730,11 @@ class FinListTile extends StatelessWidget {
   static const double _sideBySideWidth = 300;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => private ? FinPrivacy.watch((hidden) => _tile(context, hidden)) : _tile(context, false);
+
+  Widget _tile(BuildContext context, bool hidden) {
+    final String? amount = this.amount == null ? null : (hidden ? FinPrivacy.maskAll(this.amount!) : this.amount);
+    final String? subtitle = this.subtitle == null ? null : (hidden ? FinPrivacy.maskAll(this.subtitle!) : this.subtitle);
     final c = DsColors.of(context);
     final bool hasStatus = statusLabel != null && status != null;
     final bool hasFigures = amount != null || hasStatus;

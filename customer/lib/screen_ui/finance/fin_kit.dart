@@ -94,7 +94,12 @@ class FinInOut extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => FinPrivacy.watch((hidden) => _inOut(context, hidden));
+
+  Widget _inOut(BuildContext context, bool hidden) {
+    // With the eye closed the figures go; the bars keep their proportions.
+    String format(num v) => hidden ? FinPrivacy.mask(this.format(v)) : this.format(v);
+    String signed(num v) => hidden ? FinPrivacy.mask(this.signed(v)) : this.signed(v);
     final c = DsColors.of(context);
     final int net = moneyIn - moneyOut;
     final int top = math.max(1, math.max(moneyIn, moneyOut));
@@ -198,7 +203,9 @@ class FinTileGrid extends StatelessWidget {
   const FinTileGrid({super.key, required this.tiles});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => FinPrivacy.watch((hidden) => _grid(context, hidden));
+
+  Widget _grid(BuildContext context, bool hidden) {
     final c = DsColors.of(context);
     return LayoutBuilder(builder: (context, box) {
       final double scale = MediaQuery.textScalerOf(context).scale(1);
@@ -229,7 +236,7 @@ class FinTileGrid extends StatelessWidget {
                       FittedBox(
                         fit: BoxFit.scaleDown,
                         alignment: AlignmentDirectional.centerStart,
-                        child: FinAmountText(t.value, style: DsTypography.title.copyWith(color: c.textPrimary)),
+                        child: FinAmountText(hidden ? FinPrivacy.maskAll(t.value) : t.value, style: DsTypography.title.copyWith(color: c.textPrimary)),
                       ),
                       if (t.progress != null) ...[
                         const DsGap(DsSpace.xs),
@@ -245,7 +252,7 @@ class FinTileGrid extends StatelessWidget {
                       ],
                       if (t.meta != null) ...[
                         const DsGap(DsSpace.xs),
-                        Text(t.meta!, style: DsTypography.caption.copyWith(color: t.alert ? c.dangerStrong : c.textSecondary), maxLines: 2, overflow: TextOverflow.ellipsis),
+                        Text(hidden ? FinPrivacy.maskAll(t.meta!) : t.meta!, style: DsTypography.caption.copyWith(color: t.alert ? c.dangerStrong : c.textSecondary), maxLines: 2, overflow: TextOverflow.ellipsis),
                       ],
                     ]),
                   ),

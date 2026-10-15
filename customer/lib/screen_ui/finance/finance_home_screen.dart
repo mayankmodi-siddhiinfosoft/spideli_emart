@@ -193,6 +193,7 @@ class _Upcoming extends StatelessWidget {
         (
           DateTime(1970),
           FinListTile(
+            private: true,
             icon: Icons.warning_amber_rounded,
             iconTone: DsTone.danger,
             title: "Loan repayment overdue".tr,
@@ -207,6 +208,7 @@ class _Upcoming extends StatelessWidget {
         (
           d(s.loans?['nextRepaymentDate']),
           FinListTile(
+            private: true,
             leading: FinDateBadge(d(s.loans?['nextRepaymentDate'])!),
             icon: Icons.handshake_outlined,
             iconTone: DsTone.brand,
@@ -221,6 +223,7 @@ class _Upcoming extends StatelessWidget {
         (
           d(s.tontines?['nextContributionDate']),
           FinListTile(
+            private: true,
             leading: FinDateBadge(d(s.tontines?['nextContributionDate'])!),
             icon: Icons.groups_2_outlined,
             iconTone: DsTone.brand,
@@ -235,6 +238,7 @@ class _Upcoming extends StatelessWidget {
         (
           d(s.insurance?['nextRenewalDate']),
           FinListTile(
+            private: true,
             leading: FinDateBadge(d(s.insurance?['nextRenewalDate'])!),
             icon: Icons.health_and_safety_outlined,
             iconTone: DsTone.brand,

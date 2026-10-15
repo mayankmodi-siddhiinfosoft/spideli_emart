@@ -429,6 +429,7 @@ class _TransactionListState extends State<TransactionList> {
     final c = DsColors.of(context);
     final bool income = signed > 0;
     return FinListTile(
+      private: true,
       // A round avatar: an arrow in for money received, out for money spent.
       leading: Container(
         width: 40,
