@@ -1047,18 +1047,25 @@ class PolicyScreen extends StatelessWidget {
         builder: (context, snap) {
           final p = snap.data;
           final String status = p?['status']?.toString() ?? '';
+          // A claim is for an incident during the cover: none before it starts.
+          final DateTime? coverStart = FinanceGroupService.toDate(p?['coverStart']);
+          final bool notStarted = coverStart != null && DateUtils.dateOnly(coverStart).isAfter(DateUtils.dateOnly(DateTime.now()));
           return FinScaffold(
             title: "Policy".tr,
             bottomBar: p == null || !PolicyActions.canClaim(status)
                 ? null
                 : DsStickyBar(
-                    child: DsButton.primary(
-                      label: "Make a claim".tr,
-                      icon: Icons.assignment_outlined,
-                      size: DsButtonSize.lg,
-                      expand: true,
-                      onPressed: () => Get.to(() => ClaimFormScreen(policy: p, config: config)),
-                    ),
+                    child: notStarted
+                        ? Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                            DsInlineAlert(tone: DsTone.info, message: "Your cover starts on @date: you can claim for incidents from that day.".trParams({'date': _date(coverStart)})),
+                          ])
+                        : DsButton.primary(
+                            label: "Make a claim".tr,
+                            icon: Icons.assignment_outlined,
+                            size: DsButtonSize.lg,
+                            expand: true,
+                            onPressed: () => Get.to(() => ClaimFormScreen(policy: p, config: config)),
+                          ),
                   ),
             body: _whenLoaded(snap, () => refresh(() {})) ?? _body(context, p!, status),
           );
@@ -1380,7 +1387,10 @@ class _ClaimFormScreenState extends State<ClaimFormScreen> {
                 placeholder: "Choose a date".tr,
                 required: true,
                 onTap: () async {
-                  final d = await showDatePicker(context: context, initialDate: today.isBefore(first) ? first : today, firstDate: first.isAfter(today) ? today : first, lastDate: today);
+                  // From the cover start to today; a cover starting later
+                  // (guarded on the policy page) still opens on today.
+                  final DateTime firstDate = first.isAfter(today) ? today : DateUtils.dateOnly(first);
+                  final d = await showDatePicker(context: context, initialDate: today, firstDate: firstDate, lastDate: today);
                   if (d != null) setState(() => _incident = d);
                 },
               ),
@@ -1507,8 +1517,11 @@ class _ClaimScreenState extends State<ClaimScreen> {
                   ? FinTrack(steps: labels, current: at)
                   : null,
         ),
-        if ((c['reason'] ?? '').toString().isNotEmpty)
-          FinNotice(c['reason'].toString(), title: (status == 'info_requested' ? "The insurer asks" : "Reason").tr, tone: FinStatus.tone(status)),
+        // The insurer's question only while it waits for an answer; a reason
+        // only for a refusal. An answered question is not left on the claim
+        // (it read as the "reason" of a paid claim).
+        if ((c['reason'] ?? '').toString().isNotEmpty && (status == 'info_requested' || status == 'rejected'))
+          FinNotice(financeReasonText(c['reason'].toString()).tr, title: (status == 'info_requested' ? "The insurer asks" : "Reason").tr, tone: FinStatus.tone(status)),
         FinSection(
           title: "Details".tr,
           children: [

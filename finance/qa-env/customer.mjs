@@ -72,6 +72,34 @@ if (cmd === 'transfer') {
   ];
   const r = await c.commit(batchOf(writes));
   console.log(r.ok ? `ok ${p.reference}${completes ? ' (pot complete)' : ''}` : `refused ${r.status} ${r.body.slice(0, 300)}`);
+} else if (cmd === 'loan-apply') {
+  // LoanWrites.apply: the borrower asks the group (a tontine) for a loan.
+  const [who, tid, amountText, months, freq, purpose, ...desc] = args;
+  const uid = uids[who];
+  const c = new Client(uid);
+  const t = (await c.get(`tontines/${tid}`)).data;
+  const id = key();
+  const { Batch } = await import('../rules-test/lib/firestore-rest.js');
+  const b = new Batch();
+  b.set(`loan_applications/${id}`, {
+    id, borrowerId: uid, groupId: tid, groupName: t.name, status: 'submitted', currency: t.currency, amount: Number(amountText),
+    fundedAmount: 0, outstandingAmount: 0, repaidAmount: 0, durationMonths: Number(months), repaymentFrequency: freq, purpose,
+    description: desc.join(' '), eligibleVoterIds: t.memberIds.filter((m) => m !== uid), lenderIds: [], votes: { yes: 0, no: 0 }, documents: [],
+    createdAt: SERVER_TIME, updatedAt: SERVER_TIME,
+  });
+  const r = await c.commit(b);
+  console.log(r.ok ? `ok ${id}` : `refused ${r.status} ${r.body.slice(0, 300)}`);
+} else if (cmd === 'loan-vote') {
+  // LoanWrites.vote: the voter's vote + the loan's counter.
+  const [who, loanId, choice, ...comment] = args;
+  const uid = uids[who];
+  const approve = choice === 'yes';
+  const { Batch, inc } = await import('../rules-test/lib/firestore-rest.js');
+  const b = new Batch();
+  b.set(`loan_votes/${loanId}_${uid}`, { loanId, voterId: uid, approve, comment: comment.join(' '), at: SERVER_TIME });
+  b.update(`loan_applications/${loanId}`, { [approve ? 'votes.yes' : 'votes.no']: inc(1), updatedAt: SERVER_TIME });
+  const r = await new Client(uid).commit(b);
+  console.log(r.ok ? 'ok' : `refused ${r.status} ${r.body.slice(0, 300)}`);
 } else {
   console.log('usage: node customer.mjs transfer FROM TO AMOUNT [NOTE] | goal-join WHO GOAL_ID | tontine-join WHO TID | tontine-pay WHO TID');
 }

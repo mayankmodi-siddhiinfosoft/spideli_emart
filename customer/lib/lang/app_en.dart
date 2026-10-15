@@ -2896,4 +2896,5 @@ const Map<String, String> enUS = {
   "@name received the money.": "@name received the money.",
   "This bill was not paid: the money is back in your wallet.": "This bill was not paid: the money is back in your wallet.",
   "Pot per cycle when full": "Pot per cycle when full",
+  "Your cover starts on @date: you can claim for incidents from that day.": "Your cover starts on @date: you can claim for incidents from that day.",
 };

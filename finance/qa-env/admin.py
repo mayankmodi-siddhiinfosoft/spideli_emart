@@ -250,6 +250,104 @@ def tontine_payout_approve(cycle_id):
         patch(f'tontines/{p["tontineId"]}', {'status': 'completed', 'completedAt': ts, 'updatedAt': ts})
 
 
+def loan_review(loan_id):
+    l = get(f'loan_applications/{loan_id}')
+    assert l and l['status'] == 'submitted', l
+    patch(f'loan_applications/{loan_id}', {'status': 'under_review', 'updatedAt': now()})
+
+
+def loan_open_vote(loan_id, hours=48):
+    l = get(f'loan_applications/{loan_id}')
+    assert l and l['status'] == 'under_review', l
+    patch(f'loan_applications/{loan_id}', {'status': 'voting', 'votingEndsAt': now() + datetime.timedelta(hours=hours), 'updatedAt': now()})
+
+
+def loan_assess(loan_id):
+    l = get(f'loan_applications/{loan_id}')
+    put(f'credit_assessments/{loan_id}', {'loanId': loan_id, 'borrowerId': l['borrowerId'], 'score': 712, 'band': 'good', 'assessedAt': now(),
+        'factors': [{'label': 'Regular tontine contributions', 'impact': 'positive', 'detail': 'Every contribution paid on time.'},
+                    {'label': 'Short history with Spideli Finance', 'impact': 'negative', 'detail': 'Less than 3 months of activity.'}]})
+
+
+def subscription_execute(sid):
+    """Admin spec 6.10: units at the unit price, the full holding, a transaction."""
+    sub = get(f'investment_subscriptions/{sid}')
+    assert sub and sub['status'] == 'paid', sub
+    f = get(f'investment_funds/{sub["fundId"]}')
+    nav = float(f['navPerUnit'])
+    fee = round(sub['amount'] * f['fees']['subscriptionPercent'] / 100)
+    net = sub['amount'] - fee
+    units = int(net / nav * 10000) / 10000
+    t = now()
+    hid = f'{sub["userId"]}_{sub["fundId"]}'
+    h = get(f'investment_holdings/{hid}') or {'units': 0, 'investedAmount': 0, 'realizedGains': 0}
+    tot_units = round(h['units'] + units, 4)
+    invested = h['investedAmount'] + sub['amount']
+    value = round(tot_units * nav)
+    put(f'investment_holdings/{hid}', {'userId': sub['userId'], 'fundId': sub['fundId'], 'fundName': f['name'], 'assetClass': f['assetClass'], 'currency': f['currency'],
+        'units': tot_units, 'redeemableUnits': tot_units, 'redeemableValue': value, 'investedAmount': invested, 'currentValue': value,
+        'realizedGains': h.get('realizedGains', 0), 'unrealizedGains': value - invested, 'lockedUntil': None, 'valuedAt': t})
+    put(f'investment_transactions/{sid}', {'userId': sub['userId'], 'fundId': sub['fundId'], 'type': 'subscription', 'amount': sub['amount'], 'units': units, 'navPerUnit': nav, 'currency': f['currency'], 'reference': sub['reference'], 'createdAt': t})
+    patch(f'investment_subscriptions/{sid}', {'status': 'completed', 'units': units, 'navPerUnit': nav, 'netAmount': net, 'fee': fee, 'tradeDate': t, 'updatedAt': t})
+
+
+def redemption_settle(rid_):
+    r = get(f'investment_redemptions/{rid_}')
+    assert r and r['status'] == 'submitted', r
+    f = get(f'investment_funds/{r["fundId"]}')
+    hid = f'{r["userId"]}_{r["fundId"]}'
+    h = get(f'investment_holdings/{hid}')
+    nav = float(f['navPerUnit'])
+    gross = round(h['units'] * nav) if r.get('full') else r['amount']
+    units = round(h['units'], 4) if r.get('full') else int(gross / nav * 10000) / 10000
+    fee = round(gross * f['fees']['redemptionPercent'] / 100)
+    net = gross - fee
+    t = now()
+    tx, _ = post('investment_redemption', r['currency'], f'platform_{r["currency"]}', f'wallet_{r["userId"]}_{r["currency"]}', net, [r['userId']], {'kind': 'investment_redemptions', 'id': rid_}, f'Redemption - {f["name"]}')
+    left = round(h['units'] - units, 4)
+    cost = round(h['investedAmount'] * units / h['units'])
+    invested = h['investedAmount'] - cost
+    value = round(left * nav)
+    patch(f'investment_holdings/{hid}', {'units': left, 'redeemableUnits': left, 'redeemableValue': value, 'investedAmount': invested, 'currentValue': value,
+        'realizedGains': h.get('realizedGains', 0) + (net - cost), 'unrealizedGains': value - invested, 'valuedAt': t})
+    put(f'investment_transactions/{rid_}', {'userId': r['userId'], 'fundId': r['fundId'], 'type': 'redemption', 'amount': net, 'units': units, 'navPerUnit': nav, 'currency': r['currency'], 'reference': r['reference'], 'createdAt': t})
+    patch(f'investment_redemptions/{rid_}', {'status': 'settled', 'units': units, 'navPerUnit': nav, 'fee': fee, 'netAmount': net, 'tradeDate': t, 'expectedSettlementDate': t, 'settledAt': t, 'txId': tx, 'updatedAt': t})
+
+
+def quote_price(qid, premium=171600, instalment=15015):
+    q = get(f'insurance_quotes/{qid}')
+    assert q and q['status'] == 'requested', q
+    p = get(f'insurance_products/{q["productId"]}')
+    start = datetime.datetime.strptime(q['coverStart'][:19], '%Y-%m-%dT%H:%M:%S')
+    patch(f'insurance_quotes/{qid}', {'status': 'quoted', 'premium': premium, 'installmentAmount': instalment, 'deductible': p['deductible'],
+        'coverEnd': start + datetime.timedelta(days=365), 'validUntil': now() + datetime.timedelta(days=14), 'terms': p['terms'], 'termsVersion': p['termsVersion'],
+        'coverages': p['coverages'], 'insurerReference': 'DI-QA-' + rid(5).upper(), 'updatedAt': now()})
+
+
+def policy_activate(pid):
+    pol = get(f'insurance_policies/{pid}')
+    assert pol and pol['status'] == 'pending_activation', pol
+    t = now()
+    due = t + datetime.timedelta(days=30)
+    for n in (2, 3):
+        put(f'insurance_premiums/{pid}_{n}', {'id': f'{pid}_{n}', 'userId': pol['userId'], 'policyId': pid, 'amount': pol['installmentAmount'], 'currency': pol['currency'],
+            'dueDate': t + datetime.timedelta(days=30 * (n - 1)), 'status': 'upcoming', 'createdAt': t, 'updatedAt': t})
+    patch(f'insurance_policies/{pid}', {'status': 'active', 'policyNumber': 'POL-QA-' + rid(6).upper(), 'nextPremiumDue': due, 'updatedAt': t})
+
+
+def claim_request_info(cid, question):
+    t = now()
+    patch(f'insurance_claims/{cid}', {'status': 'info_requested', 'reason': question, 'updatedAt': t})
+    put(f'insurance_claims/{cid}/events/admin_{rid()}', {'type': 'info_requested', 'authorId': ADMIN, 'message': question, 'createdAt': t})
+
+
+def claim_approve_pay(cid, amount):
+    c = get(f'insurance_claims/{cid}')
+    t = now()
+    post('insurance_claim_payout', c['currency'], f'platform_{c["currency"]}', f'wallet_{c["userId"]}_{c["currency"]}', amount, [c['userId']], {'kind': 'insurance_claims', 'id': cid}, 'Insurance claim payment')
+    patch(f'insurance_claims/{cid}', {'status': 'paid', 'approvedAmount': amount, 'paidAmount': amount, 'paidAt': t, 'updatedAt': t})
+
+
 if __name__ == '__main__':
     cmd, args = sys.argv[1], sys.argv[2:]
     {
@@ -257,6 +355,15 @@ if __name__ == '__main__':
         'withdrawal-fail': lambda: withdrawal_fail(args[0], args[1]),
         'reverse': lambda: print(reverse(args[0], args[1])),
         'transfer-lock': lambda: transfer_lock(args[0]),
+        'quote-price': lambda: quote_price(args[0]),
+        'policy-activate': lambda: policy_activate(args[0]),
+        'claim-info': lambda: claim_request_info(args[0], args[1]),
+        'claim-pay': lambda: claim_approve_pay(args[0], int(args[1])),
+        'redemption-settle': lambda: redemption_settle(args[0]),
+        'subscription-execute': lambda: subscription_execute(args[0]),
+        'loan-review': lambda: loan_review(args[0]),
+        'loan-open-vote': lambda: loan_open_vote(args[0]),
+        'loan-assess': lambda: loan_assess(args[0]),
         'tontine-payout-approve': lambda: tontine_payout_approve(args[0]),
         'savings-withdrawal-complete': lambda: savings_withdrawal_complete(args[0]),
         'savings-withdrawal-reject': lambda: savings_withdrawal_reject(args[0], args[1]),
