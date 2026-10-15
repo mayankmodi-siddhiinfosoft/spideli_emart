@@ -105,6 +105,19 @@ abstract final class FinanceIntelService {
         ));
       });
 
+  /// The user's own answer to an opportunity, live: true (interest shared),
+  /// false (not for me), null (no answer yet, or it cannot be read).
+  static Stream<bool?> myInterest(String opportunityId) {
+    final String uid = FinanceService.uid;
+    if (uid.isEmpty) return Stream<bool?>.value(null);
+    return _db
+        .collection('opportunity_interests')
+        .doc('${opportunityId}_$uid')
+        .snapshots()
+        .map<bool?>((s) => s.data() == null ? null : s.data()!['interested'] == true)
+        .handleError((Object _) {});
+  }
+
   /// Tells the project owner the user is interested (their name and email
   /// go with it), or hides the opportunity. No money moves.
   static Future<void> respond(String opportunityId, bool interested, {String message = ''}) => _guard(() async {

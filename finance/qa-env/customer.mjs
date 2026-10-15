@@ -100,6 +100,20 @@ if (cmd === 'transfer') {
   b.update(`loan_applications/${loanId}`, { [approve ? 'votes.yes' : 'votes.no']: inc(1), updatedAt: SERVER_TIME });
   const r = await new Client(uid).commit(b);
   console.log(r.ok ? 'ok' : `refused ${r.status} ${r.body.slice(0, 300)}`);
+} else if (cmd === 'tontine-chat') {
+  // FinanceChatRules.send for a tontine group chat: the message + the chat's last message.
+  const [who, tid, ...words] = args;
+  const uid = uids[who];
+  const names = { amina: 'Amina Diallo', jean: 'Jean Mbarga', fatou: 'Fatou Ndiaye' };
+  const text = words.join(' ');
+  const chat = `tontine_${tid}`;
+  const id = `qa${Date.now()}`;
+  const { Batch } = await import('../rules-test/lib/firestore-rest.js');
+  const b = new Batch();
+  b.set(`finance_chats/${chat}/messages/${id}`, { id, senderId: uid, senderName: names[who], text, createdAt: SERVER_TIME });
+  b.update(`finance_chats/${chat}`, { lastMessage: { text, senderId: uid, at: SERVER_TIME }, updatedAt: SERVER_TIME });
+  const r = await new Client(uid).commit(b);
+  console.log(r.ok ? 'ok' : `refused ${r.status} ${r.body.slice(0, 300)}`);
 } else {
   console.log('usage: node customer.mjs transfer FROM TO AMOUNT [NOTE] | goal-join WHO GOAL_ID | tontine-join WHO TID | tontine-pay WHO TID');
 }

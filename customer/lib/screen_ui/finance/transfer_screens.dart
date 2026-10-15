@@ -1,3 +1,4 @@
+import 'package:customer/screen_ui/finance/finance_restriction.dart';
 import 'dart:async';
 
 import 'package:customer/constant/constant.dart';
@@ -245,6 +246,7 @@ class TransfersScreen extends StatelessWidget {
         return FinScaffold(
           title: "Money transfer".tr,
           body: FinBody(children: [
+            const FinanceRestrictionNotice(scope: 'transfers'),
             if (placeholder != null || cfg == null)
               placeholder ?? FinState.loading()
             else ...[

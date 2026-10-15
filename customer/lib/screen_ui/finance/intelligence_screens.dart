@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'dart:math' as math;
 
 import 'package:customer/constant/constant.dart';
@@ -760,6 +762,37 @@ class _OpportunityScreenState extends State<OpportunityScreen> {
   /// The interest was sent from this screen: not sent twice.
   bool _sent = false;
 
+  /// The user's saved answer (a later visit shows the interest already shared).
+  late final Stream<bool?> _answer = FinanceIntelService.myInterest(widget.opportunityId);
+  bool _shared = false;
+  StreamSubscription<bool?>? _answerSub;
+
+  @override
+  void initState() {
+    super.initState();
+    _answerSub = _answer.listen((v) {
+      if (mounted) setState(() => _shared = v == true);
+    });
+  }
+
+  @override
+  void dispose() {
+    _answerSub?.cancel();
+    super.dispose();
+  }
+
+  /// Withdraws a shared interest: the name and email are removed (no money was committed).
+  Future<void> _withdraw(Opportunity o) async {
+    final ok = await finConfirm(
+      title: "Withdraw your interest?".tr,
+      message: "Your name, email and message are removed from this opportunity.".tr,
+      confirmLabel: "Withdraw".tr,
+    );
+    if (!ok) return;
+    final done = await _run(() => FinanceIntelService.respond(o.id, false), success: "Interest withdrawn");
+    if (done && mounted) setState(() => _sent = false);
+  }
+
   /// Hides the opportunity, then goes back to the list it no longer belongs to.
   Future<void> _notForMe(Opportunity o) async {
     final ok = await _run(() => FinanceIntelService.respond(o.id, false), success: "Hidden");
@@ -805,17 +838,18 @@ class _OpportunityScreenState extends State<OpportunityScreen> {
               ? null
               : DsStickyBar(
                   child: FinanceKycGate(
-                    builder: (context, verified) => Row(children: [
-                      Expanded(child: DsButton.secondary(label: "Not for me".tr, onPressed: _sent ? null : () => _notForMe(o))),
-                      const DsGap(DsSpace.sm),
-                      Expanded(
-                        child: DsButton.primary(
-                          label: (_sent ? "Interest sent" : "I am interested").tr,
-                          icon: _sent ? Icons.check_rounded : null,
-                          onPressed: verified && !_sent ? () => _interested(context, o) : null,
-                        ),
-                      ),
-                    ]),
+                    builder: (context, verified) => _sent || _shared
+                        ? DsButton.secondary(label: "Withdraw my interest".tr, expand: true, onPressed: () => _withdraw(o))
+                        : Row(children: [
+                            Expanded(child: DsButton.secondary(label: "Not for me".tr, onPressed: () => _notForMe(o))),
+                            const DsGap(DsSpace.sm),
+                            Expanded(
+                              child: DsButton.primary(
+                                label: "I am interested".tr,
+                                onPressed: verified ? () => _interested(context, o) : null,
+                              ),
+                            ),
+                          ]),
                   ),
                 ),
           body: state != null ? FinBody(children: [state]) : _body(context, o!, open),
@@ -841,7 +875,7 @@ class _OpportunityScreenState extends State<OpportunityScreen> {
               )
             : null,
       ),
-      if (_sent) FinNotice("The project owner has your name and email and can contact you. No money is committed.".tr, title: "Interest sent".tr, tone: DsTone.success),
+      if (_sent || _shared) FinNotice("The project owner has your name and email and can contact you. No money is committed.".tr, title: "Interest sent".tr, tone: DsTone.success),
       if (match != null)
         FinNotice(
           match.reasons.map((r) => IntelLabels.reason(r).tr).join(', '),

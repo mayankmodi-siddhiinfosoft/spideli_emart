@@ -26,13 +26,18 @@ class FinanceRestrictionNotice extends StatefulWidget {
   /// Space around the notice when it is shown.
   final EdgeInsetsGeometry padding;
 
+  /// Shown only when the restriction blocks this service (`transfers`,
+  /// `payments`…): at the top of that service, before the customer fills a
+  /// form that would be refused. Null: any restriction (Finance Home).
+  final String? scope;
+
   /// Reads the user's profile itself (e.g. at the top of Finance Home).
-  const FinanceRestrictionNotice({super.key, this.padding = const EdgeInsets.only(bottom: DsSpace.lg)})
+  const FinanceRestrictionNotice({super.key, this.padding = const EdgeInsets.only(bottom: DsSpace.lg), this.scope})
       : profile = null,
         _reads = true;
 
   /// From the profile the screen already reads (null while it loads).
-  const FinanceRestrictionNotice.of(this.profile, {super.key, this.padding = const EdgeInsets.only(bottom: DsSpace.lg)}) : _reads = false;
+  const FinanceRestrictionNotice.of(this.profile, {super.key, this.padding = const EdgeInsets.only(bottom: DsSpace.lg), this.scope}) : _reads = false;
 
   @override
   State<FinanceRestrictionNotice> createState() => _FinanceRestrictionNoticeState();
@@ -72,7 +77,7 @@ class _FinanceRestrictionNoticeState extends State<FinanceRestrictionNotice> {
 
   Widget _notice(Map<String, dynamic>? profile) {
     final FinanceRestrictionInfo? r = FinanceRestriction.of(profile, toDate: (v) => v is Timestamp ? v.toDate() : null);
-    if (r == null) return const SizedBox.shrink();
+    if (r == null || (widget.scope != null && !r.covers(widget.scope!))) return const SizedBox.shrink();
     final List<String> lines = [
       r.isTotal
           ? "Your Spideli Finance account is restricted for all Spideli Finance services.".tr

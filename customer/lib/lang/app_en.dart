@@ -2897,4 +2897,8 @@ const Map<String, String> enUS = {
   "This bill was not paid: the money is back in your wallet.": "This bill was not paid: the money is back in your wallet.",
   "Pot per cycle when full": "Pot per cycle when full",
   "Your cover starts on @date: you can claim for incidents from that day.": "Your cover starts on @date: you can claim for incidents from that day.",
+  "Withdraw your interest?": "Withdraw your interest?",
+  "Your name, email and message are removed from this opportunity.": "Your name, email and message are removed from this opportunity.",
+  "Interest withdrawn": "Interest withdrawn",
+  "Withdraw my interest": "Withdraw my interest",
 };

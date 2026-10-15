@@ -2894,4 +2894,8 @@ const Map<String, String> arAR = {
   "This bill was not paid: the money is back in your wallet.": "لم تُدفع هذه الفاتورة: عادت الأموال إلى محفظتك.",
   "Pot per cycle when full": "الصندوق لكل دورة عند اكتمال الأعضاء",
   "Your cover starts on @date: you can claim for incidents from that day.": "تبدأ تغطيتك في @date: يمكنك المطالبة عن الحوادث اعتبارًا من ذلك اليوم.",
+  "Withdraw your interest?": "هل تريد سحب اهتمامك؟",
+  "Your name, email and message are removed from this opportunity.": "تُزال بياناتك (الاسم والبريد الإلكتروني والرسالة) من هذه الفرصة.",
+  "Interest withdrawn": "تم سحب الاهتمام",
+  "Withdraw my interest": "سحب اهتمامي",
 };

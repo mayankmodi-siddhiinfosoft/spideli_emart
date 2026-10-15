@@ -348,6 +348,25 @@ def claim_approve_pay(cid, amount):
     patch(f'insurance_claims/{cid}', {'status': 'paid', 'approvedAmount': amount, 'paidAmount': amount, 'paidAt': t, 'updatedAt': t})
 
 
+def kyc_review(app_id):
+    a = get(f'kyc_applications/{app_id}')
+    assert a and a['status'] == 'submitted', a
+    t = now()
+    patch(f'kyc_applications/{app_id}', {'status': 'under_review', 'updatedAt': t})
+    i = rid(20)
+    put(f'kyc_reviews/{i}', {'id': i, 'applicationId': app_id, 'userId': a['userId'], 'action': 'start_review', 'by': ADMIN, 'at': t})
+
+
+def kyc_approve(app_id):
+    a = get(f'kyc_applications/{app_id}')
+    assert a and a['status'] == 'under_review', a
+    t = now()
+    patch(f'kyc_applications/{app_id}', {'status': 'approved', 'updatedAt': t})
+    patch(f'users/{a["userId"]}', {'kycLevel': a['level'], 'kycStatus': 'approved'})
+    i = rid(20)
+    put(f'kyc_reviews/{i}', {'id': i, 'applicationId': app_id, 'userId': a['userId'], 'action': 'approve', 'by': ADMIN, 'at': t})
+
+
 if __name__ == '__main__':
     cmd, args = sys.argv[1], sys.argv[2:]
     {
@@ -355,6 +374,8 @@ if __name__ == '__main__':
         'withdrawal-fail': lambda: withdrawal_fail(args[0], args[1]),
         'reverse': lambda: print(reverse(args[0], args[1])),
         'transfer-lock': lambda: transfer_lock(args[0]),
+        'kyc-review': lambda: kyc_review(args[0]),
+        'kyc-approve': lambda: kyc_approve(args[0]),
         'quote-price': lambda: quote_price(args[0]),
         'policy-activate': lambda: policy_activate(args[0]),
         'claim-info': lambda: claim_request_info(args[0], args[1]),

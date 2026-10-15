@@ -1,3 +1,4 @@
+import 'package:customer/screen_ui/finance/finance_restriction.dart';
 import 'package:customer/screen_ui/finance/fin_ds.dart';
 import 'package:customer/screen_ui/finance/finance_security.dart';
 import 'package:customer/screen_ui/finance/finance_ui.dart';
@@ -56,6 +57,7 @@ class BillsScreen extends StatelessWidget {
         return FinScaffold(
           title: "Payment".tr,
           body: FinBody(children: [
+            const FinanceRestrictionNotice(scope: 'payments'),
             if (placeholder != null || cfg == null)
               placeholder ?? FinState.loading()
             else ...[
