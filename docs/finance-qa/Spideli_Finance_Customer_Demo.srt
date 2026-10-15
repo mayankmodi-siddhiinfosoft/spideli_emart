@@ -1,0 +1,344 @@
+1
+00:00:00,600 --> 00:00:03,643
+This demonstration shows the real Spideli customer app,
+
+2
+00:00:03,643 --> 00:00:07,958
+running in a private test environment with fictional customers and test money.
+
+3
+00:00:08,408 --> 00:00:12,484
+The narration voice is computer generated. There is no human presenter.
+
+4
+00:00:13,984 --> 00:00:19,094
+Welcome to this walkthrough of Spideli Finance, the money module of the Spideli customer app.
+
+5
+00:00:19,544 --> 00:00:25,231
+We will follow Amina, a sample customer, as she uses her wallet, sends money, pays bills,
+
+6
+00:00:25,231 --> 00:00:30,727
+saves with her family and her community, invests, and protects herself with insurance.
+
+7
+00:00:31,177 --> 00:00:36,177
+Everything you see is the real app, connected to a private test environment with test money.
+
+8
+00:00:37,677 --> 00:00:40,454
+Spideli Finance opens on Amina's dashboard.
+
+9
+00:00:40,904 --> 00:00:44,410
+At the top is her available balance in Central African francs,
+
+10
+00:00:44,410 --> 00:00:46,502
+with her other currencies just below.
+
+11
+00:00:46,502 --> 00:00:50,630
+The eye icon hides the amounts when someone is looking over her shoulder.
+
+12
+00:00:51,080 --> 00:00:56,560
+The four round buttons are her everyday actions: add money, send, pay bills, and withdraw.
+
+13
+00:00:57,010 --> 00:01:00,384
+Further down, Coming up reminds her of her next payment,
+
+14
+00:01:00,384 --> 00:01:02,974
+This month compares money in and money out,
+
+15
+00:01:02,974 --> 00:01:07,914
+and Your money summarizes her savings, investments, loans, tontines and insurance.
+
+16
+00:01:09,414 --> 00:01:13,677
+The Services tab groups every finance service by what it helps you do:
+
+17
+00:01:13,677 --> 00:01:17,576
+pay and send, save and invest, borrow and protect, and get help.
+
+18
+00:01:21,079 --> 00:01:24,098
+The Wallet tab shows her full history, grouped by day.
+
+19
+00:01:27,602 --> 00:01:30,376
+She can search by reference, filter by type,
+
+20
+00:01:30,376 --> 00:01:34,601
+and open any transaction to see its details and copy its reference.
+
+21
+00:01:39,154 --> 00:01:41,402
+Now Amina withdraws money to Mobile Money.
+
+22
+00:01:42,352 --> 00:01:46,107
+If she asks for more than she has, the app tells her straight away,
+
+23
+00:01:46,107 --> 00:01:48,293
+and the Continue button stays disabled.
+
+24
+00:01:49,243 --> 00:01:52,513
+For twenty thousand francs, the fee is calculated for her,
+
+25
+00:01:52,513 --> 00:01:56,234
+and she sees exactly what she receives and what leaves her wallet.
+
+26
+00:01:57,184 --> 00:02:02,267
+She chooses her saved Orange Money number and confirms. The request is now in progress.
+
+27
+00:02:03,217 --> 00:02:05,670
+When Spideli's operations team pays it out,
+
+28
+00:02:05,670 --> 00:02:09,036
+the page updates on its own and shows the payout reference.
+
+29
+00:02:11,036 --> 00:02:13,860
+Sending money to another Spideli customer is instant.
+
+30
+00:02:17,174 --> 00:02:20,567
+Amina enters Jean's email address. Before anything is paid,
+
+31
+00:02:20,567 --> 00:02:23,213
+the app checks the account and shows his name,
+
+32
+00:02:23,213 --> 00:02:26,203
+so she knows the money is going to the right person.
+
+33
+00:02:29,517 --> 00:02:32,468
+Transfers between customers are free. She confirms,
+
+34
+00:02:32,468 --> 00:02:36,518
+pays from her wallet, and the money is in Jean's wallet straight away.
+
+35
+00:02:40,883 --> 00:02:45,756
+Paying a bill takes just a few taps. Amina chooses electricity and her provider.
+
+36
+00:02:54,110 --> 00:02:57,300
+A meter number in the wrong format is caught before she pays.
+
+37
+00:03:05,654 --> 00:03:09,449
+She pays fifteen thousand francs, and the payment is processing.
+
+38
+00:03:17,803 --> 00:03:19,430
+Once the provider confirms,
+
+39
+00:03:19,430 --> 00:03:24,132
+her prepaid electricity code appears on the receipt, with a button to copy it.
+
+40
+00:03:33,537 --> 00:03:36,238
+Amina can also hold euros and US dollars.
+
+41
+00:03:37,938 --> 00:03:39,978
+The converter uses the published rate,
+
+42
+00:03:39,978 --> 00:03:44,057
+and shows the fee and the exact amount she will receive before she confirms.
+
+43
+00:03:46,807 --> 00:03:49,694
+Her virtual card can be topped up from her wallet,
+
+44
+00:03:49,694 --> 00:03:53,850
+given spending limits, and frozen in one tap if she misplaces her phone.
+
+45
+00:04:07,311 --> 00:04:10,941
+Unfreezing asks for her password, so nobody else can do it.
+
+46
+00:04:25,453 --> 00:04:29,726
+With collective savings, Amina and her family save towards a shared goal,
+
+47
+00:04:29,726 --> 00:04:31,306
+here a deposit for a house.
+
+48
+00:04:38,723 --> 00:04:43,330
+Every member can add money. The app shows the progress and the projected completion date,
+
+49
+00:04:43,330 --> 00:04:46,022
+and a withdrawal from a group goal becomes a request
+
+50
+00:04:46,022 --> 00:04:48,403
+that Spideli checks against the group's rules.
+
+51
+00:04:56,870 --> 00:04:59,739
+A tontine is a traditional rotating savings group.
+
+52
+00:04:59,739 --> 00:05:05,017
+Each member pays the same amount every cycle, and one member receives the whole pot in turn.
+
+53
+00:05:06,300 --> 00:05:09,901
+Amina already received the first pot. Now it is Jean's turn,
+
+54
+00:05:09,901 --> 00:05:12,961
+and she pays her contribution for the second cycle.
+
+55
+00:05:14,244 --> 00:05:18,248
+The app shows who has paid, who receives the pot, and the full schedule.
+
+56
+00:05:20,581 --> 00:05:25,179
+Members of a group can also lend to each other. Jean asked his tontine for a loan,
+
+57
+00:05:25,179 --> 00:05:28,991
+the members voted, Amina funded it, and Jean accepted the agreement.
+
+58
+00:05:30,691 --> 00:05:34,171
+As a lender, Amina sees the terms, the repayment schedule,
+
+59
+00:05:34,171 --> 00:05:37,410
+the repayments already made, and her share to collect.
+
+60
+00:05:40,160 --> 00:05:43,429
+In Investments, Amina compares funds by risk and fees,
+
+61
+00:05:43,429 --> 00:05:46,031
+and reads their key facts before investing.
+
+62
+00:05:47,731 --> 00:05:52,394
+Her portfolio shows its value, what she invested, and her gains or losses.
+
+63
+00:05:55,144 --> 00:05:59,813
+For insurance, Amina answers a few questions and gets an estimate straight away.
+
+64
+00:06:05,929 --> 00:06:09,756
+Her family health policy is active, with its premium schedule.
+
+65
+00:06:15,872 --> 00:06:19,221
+When her daughter needed care, she declared a claim in the app,
+
+66
+00:06:19,221 --> 00:06:23,049
+answered the insurer's question, and the claim was paid into her wallet.
+
+67
+00:06:30,215 --> 00:06:33,851
+Things do not always go to plan, and the app is honest about it.
+
+68
+00:06:36,381 --> 00:06:37,923
+When a payout cannot be made,
+
+69
+00:06:37,923 --> 00:06:41,804
+the money goes back to the wallet automatically, and the reason is shown.
+
+70
+00:06:44,334 --> 00:06:48,082
+If the connection is lost while paying, the app does not pretend:
+
+71
+00:06:48,082 --> 00:06:53,329
+it says the payment is not confirmed. Trying again finishes it, and can never charge twice.
+
+72
+00:06:56,909 --> 00:06:59,410
+Behind the screens, every movement of money is
+
+73
+00:06:59,410 --> 00:07:02,346
+recorded in Firebase as a debit and a matching credit.
+
+74
+00:07:02,796 --> 00:07:04,231
+In this test environment,
+
+75
+00:07:04,231 --> 00:07:08,993
+an independent check confirms that every balance matches its history, to the franc.
+
+76
+00:07:09,443 --> 00:07:14,517
+Customers only ever see their own records: the security rules refuse everything else.
+
+77
+00:07:16,017 --> 00:07:18,826
+To finish, here is a complete journey in one go.
+
+78
+00:07:30,502 --> 00:07:36,098
+Amina opens Spideli Finance, sends five thousand francs to Fatou, sees the confirmation,
+
+79
+00:07:36,098 --> 00:07:41,122
+and finds the transfer at the top of her recent activity, with all its details.
+
+80
+00:07:53,848 --> 00:07:58,005
+To sum up, Spideli Finance gives customers one place to hold, send,
+
+81
+00:07:58,005 --> 00:08:03,589
+save and grow their money, with clear confirmations, live statuses and a complete history.
+
+82
+00:08:04,039 --> 00:08:07,482
+A few parts depend on partners that are not connected yet.
+
+83
+00:08:07,482 --> 00:08:12,172
+Adding money by card or Mobile Money needs the payment provider's live account.
+
+84
+00:08:12,172 --> 00:08:17,812
+Card issuing needs a card issuer. Two step verification by SMS needs to be enabled in Firebase.
+
+85
+00:08:17,812 --> 00:08:20,661
+And the AI financial coach is not available yet.
+
+86
+00:08:21,111 --> 00:08:22,250
+Thank you for watching.
+
