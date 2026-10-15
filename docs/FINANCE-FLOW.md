@@ -1,5 +1,7 @@
 # Spideli Finance: End-to-End Feature and Flow (Admin and Customer App)
 
+> **Superseded (15 Oct 2026)** by `SPIDELI_FINANCE_CUSTOMER_WEB_SPEC.md` and `SPIDELI_FINANCE_ADMIN_WEB_SPEC.md`, which are complete and checked against the security rules. Where this document differs, they win. Kept for history.
+
 **Audience:** the client, the admin-panel / website team, the Cloud Functions team, app developers and testers.
 **Code baseline:** branch `feature/restaurant-app-panel-parity`, 14 Oct 2026 (direct-Firestore release).
 **Scope:** Spideli Finance in the **customer app** (`customer/`), and everything the **admin panel** and the **server** must provide for it.

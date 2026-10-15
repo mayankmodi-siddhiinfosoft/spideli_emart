@@ -84,7 +84,7 @@ void main() {
       })!;
       expect(c.needsReauth(99999, 'XAF'), isFalse);
       expect(c.needsReauth(100000, 'XAF'), isTrue);
-      expect(c.needsReauth(100000, 'EUR'), isFalse);
+      expect(c.needsReauth(1, 'EUR'), isTrue, reason: 'no threshold: always (the rules refuse an older sign-in)');
     });
 
     test('biller: parsed defensively; account pattern anchored; bad pattern ignored', () {

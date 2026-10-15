@@ -1,5 +1,7 @@
 # Spideli Finance: admin back-office specification (for the PHP admin panel)
 
+> **Superseded (15 Oct 2026)** by `SPIDELI_FINANCE_ADMIN_WEB_SPEC.md`, which are complete and checked against the security rules. Where this document differs, they win. Kept for history.
+
 **For:** the PHP developer of the Spideli admin panel.
 **Date:** 14 Oct 2026. **Firebase project:** `spideli-870b0`.
 **Customer side:** the customer app (Flutter) writes the customer's requests **directly to Firestore**; there are **no Cloud Functions** for finance. The admin panel is the only "server": it reviews, approves, pays out, executes and reconciles, writing to the **same Firestore documents** the app reads live.

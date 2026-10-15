@@ -211,7 +211,7 @@ class BillsConfig {
   final List<String> categories;
   final List<String> paymentMethods;
 
-  /// Re-authentication from this amount, per currency (none = never asked by the app).
+  /// Re-authentication from this amount, per currency (a currency without one: always, as the rules require).
   final Map<String, int> reauthAbove;
 
   const BillsConfig({required this.currencies, required this.categories, required this.paymentMethods, this.reauthAbove = const {}});
@@ -225,7 +225,11 @@ class BillsConfig {
     return BillsConfig(currencies: currencies, categories: categories, paymentMethods: methods, reauthAbove: _amounts(_map(raw['security'])['reauthAbove']));
   }
 
-  bool needsReauth(int amount, String currency) => reauthAbove[currency] != null && amount >= reauthAbove[currency]!;
+  /// A confirmation of identity is asked before paying [amount] (the total, fee included).
+  bool needsReauth(int amount, String currency) {
+    final int? above = reauthAbove[currency];
+    return above == null || amount >= above;
+  }
 }
 
 class BillPackage {
