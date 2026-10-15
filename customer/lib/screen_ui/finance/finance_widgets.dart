@@ -438,6 +438,8 @@ abstract final class FinancePaySheet {
     required List<String> methods,
     required Future<Map<String, dynamic>> Function(FinancePayment payment) submit,
     bool payout = false,
+    String? doneTitle,
+    String? doneMessage,
   }) async {
     // One payment step at a time: a second tap while it opens does nothing.
     if (_busy) return;
@@ -456,7 +458,7 @@ abstract final class FinancePaySheet {
       ShowToastDialog.closeLoader();
       if (!context.mounted) return;
       final options = payout ? _payoutOptions(methods, saved) : _payOptions(methods, amount, currency, balance, checkout);
-      await _show(context, title: title, amount: amount, currency: currency, methods: methods, options: options, checkout: checkout, submit: submit, payout: payout);
+      await _show(context, title: title, amount: amount, currency: currency, methods: methods, options: options, checkout: checkout, submit: submit, payout: payout, doneTitle: doneTitle, doneMessage: doneMessage);
     } finally {
       ShowToastDialog.closeLoader();
       checkout?.close();
@@ -530,6 +532,8 @@ abstract final class FinancePaySheet {
     required FinanceCheckout? checkout,
     required Future<Map<String, dynamic>> Function(FinancePayment payment) submit,
     required bool payout,
+    String? doneTitle,
+    String? doneMessage,
   }) async {
     int? selected = options.indexWhere((o) => o.unavailable == null);
     if (selected < 0) selected = null;
@@ -646,13 +650,14 @@ abstract final class FinancePaySheet {
       try {
         final reply = await submit(payment);
         ShowToastDialog.closeLoader();
-        await _result(reply, amount: amount, currency: currency, payout: payout);
+        await _result(reply, amount: amount, currency: currency, payout: payout, doneTitle: doneTitle, doneMessage: doneMessage);
         return;
       } catch (e) {
         ShowToastDialog.closeLoader();
         final bool charged = !payout && !payment.isWallet;
         if (charged) log('finance: ${payment.method} payment ${payment.reference} not recorded yet: $e');
-        if (!await _failed(_message(e), payout: payout, charged: charged ? payment : null, amount: amount, currency: currency)) return;
+        final bool unconfirmed = e is FinanceException && e.reason == 'network';
+        if (!await _failed(_message(e), payout: payout, charged: charged ? payment : null, amount: amount, currency: currency, unconfirmed: unconfirmed)) return;
       }
     }
   }
@@ -666,12 +671,15 @@ abstract final class FinancePaySheet {
   }
 
   /// The answer: received, sent for processing, started (approve on the phone) or a payout requested.
-  static Future<void> _result(Map<String, dynamic> reply, {required int amount, required String currency, required bool payout}) async {
+  /// [doneTitle] / [doneMessage] (already translated): what a completed
+  /// operation says instead of "Payment received", e.g. "Money sent" to the
+  /// sender of a transfer.
+  static Future<void> _result(Map<String, dynamic> reply, {required int amount, required String currency, required bool payout, String? doneTitle, String? doneMessage}) async {
     final String instructions = reply['instructions']?.toString() ?? '';
     final bool received = !payout && FinancePayReply.succeeded(reply);
     final bool processing = !payout && FinancePayReply.processing(reply);
     await finSheet(
-      title: (payout ? "Request sent" : (received || processing ? "Payment received" : "Payment started")).tr,
+      title: received && doneTitle != null ? doneTitle : (payout ? "Request sent" : (received || processing ? "Payment received" : "Payment started")).tr,
       child: _finAccent(
         Builder(
           builder: (context) {
@@ -699,6 +707,8 @@ abstract final class FinancePaySheet {
                 Text(
                   instructions.isNotEmpty
                       ? instructions
+                      : received && doneMessage != null
+                      ? doneMessage
                       : (payout
                               ? "The money is sent once your request is processed. You can follow it here."
                               : received
@@ -727,10 +737,17 @@ abstract final class FinancePaySheet {
   /// It did not go through: why, and whether to try again. [charged]: a
   /// gateway already took the money, the operation is not recorded yet -
   /// say so, and confirm before leaving without it.
-  static Future<bool> _failed(String message, {required bool payout, FinancePayment? charged, int amount = 0, String currency = ''}) async {
+  /// [unconfirmed]: the connection failed, so whether the operation reached
+  /// Spideli Finance is unknown - never say it failed; Try again settles it.
+  static Future<bool> _failed(String message, {required bool payout, FinancePayment? charged, int amount = 0, String currency = '', bool unconfirmed = false}) async {
     while (true) {
       final bool? again = await finSheet<bool>(
-        title: (payout ? "Request not sent" : (charged != null ? "Payment not recorded yet" : "Payment not completed")).tr,
+        title: (charged != null
+                ? "Payment not recorded yet"
+                : unconfirmed
+                    ? (payout ? "Request not confirmed" : "Payment not confirmed")
+                    : (payout ? "Request not sent" : "Payment not completed"))
+            .tr,
         isDismissible: charged == null,
         enableDrag: charged == null,
         child: _finAccent(
@@ -746,6 +763,13 @@ abstract final class FinancePaySheet {
                     const DsGap(DsSpace.md),
                     Expanded(child: Text(message, style: DsTypography.body.copyWith(color: c.textPrimary))),
                   ]),
+                  if (unconfirmed && charged == null) ...[
+                    const DsGap(DsSpace.md),
+                    DsInlineAlert(
+                      tone: DsTone.info,
+                      message: "If it reached Spideli Finance before the connection was lost, Try again shows it as done: nothing is ever paid twice.".tr,
+                    ),
+                  ],
                   if (charged != null) ...[
                     const DsGap(DsSpace.md),
                     DsInlineAlert(

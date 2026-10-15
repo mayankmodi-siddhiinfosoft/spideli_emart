@@ -158,10 +158,8 @@ abstract final class FinancePaymentService {
   /// becomes `permission_denied`, a lost connection `network`.
   static Future<Map<String, dynamic>?> commit(List<FinanceWrite> writes, {String? guard, String owner = 'userId'}) async {
     if (FinanceService.uid.isEmpty) throw const FinanceException('sign_in_required');
-    final batch = _db.batch();
-    FinanceLedger.apply(batch, writes, db: _db);
     try {
-      await batch.commit().timeout(const Duration(seconds: 45));
+      await FinanceLedger.commit(writes, db: _db);
       return null;
     } catch (e) {
       if (guard != null) {

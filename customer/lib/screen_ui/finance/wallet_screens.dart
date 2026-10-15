@@ -565,7 +565,7 @@ class _WalletOperationScreenState extends State<WalletOperationScreen> {
         statusLabel: WalletOps.statusLabel(status).tr,
         icon: _opIcon(type),
         titleColor: deposit ? finAmountColor(context, 1) : null,
-        below: reason.isEmpty ? null : DsInlineAlert(tone: FinStatus.tone(status), title: "Reason".tr, message: reason),
+        below: reason.isEmpty ? null : DsInlineAlert(tone: FinStatus.tone(status), title: "Reason".tr, message: financeReasonText(reason).tr),
       ),
       if (track != null) FinSection(title: "Status".tr, padding: const EdgeInsets.all(DsSpace.lg), children: [track]),
       if (type == WalletOps.withdrawal && status == 'pending')

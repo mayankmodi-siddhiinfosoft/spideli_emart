@@ -10,8 +10,28 @@ library;
 /// references keep their order inside right-to-left (Arabic) text.
 String ltr(String s) => '\u2066$s\u2069';
 
-/// A reference ("SPL-DEMO-0005") kept on one line and in order: non-breaking hyphens, left-to-right.
-String ltrRef(Object? s) => ltr('${s ?? ''}'.replaceAll('-', '\u2011'));
+/// A reference ("SPL-DEMO-0005") kept on one line and in order,
+/// left-to-right. Each hyphen stays a plain hyphen followed by a word joiner
+/// (U+2060, invisible, no break around it): the non-breaking hyphen U+2011 is
+/// missing from the app font on some Android versions, which then drew an
+/// underscore ("SPL_DEMO_0005").
+String ltrRef(Object? s) => ltr('${s ?? ''}'.replaceAll('-', '-\u2060'));
+
+/// The reason an admin or a rule recorded, as a sentence to show the
+/// customer. Reasons are normally written as sentences; a few are codes
+/// (`vote`, `cancelled_by_sender`): known codes read as their sentence (an
+/// English key, translated by the caller), other codes as words.
+String financeReasonText(String reason) {
+  final String r = reason.trim();
+  const known = {
+    'vote': 'The members of your group did not approve the request.',
+    'cancelled_by_sender': 'Cancelled at your request.',
+  };
+  if (known.containsKey(r)) return known[r]!;
+  if (!RegExp(r'^[a-z][a-z0-9_]*$').hasMatch(r)) return r;
+  final String words = r.replaceAll('_', ' ');
+  return '${words[0].toUpperCase()}${words.substring(1)}.';
+}
 
 /// Money as the ledger stores it: integer minor units + ISO code.
 abstract final class FinanceMoney {

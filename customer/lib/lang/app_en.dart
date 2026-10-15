@@ -2887,4 +2887,11 @@ const Map<String, String> enUS = {
   "Electricity, water, TV, internet, taxes and more": "Electricity, water, TV, internet, taxes and more",
   "New compared with": "New compared with",
   "vs": "vs",
+  "Cancelled at your request.": "Cancelled at your request.",
+  "This transfer was not sent: the money is back in your wallet.": "This transfer was not sent: the money is back in your wallet.",
+  "Payment not confirmed": "Payment not confirmed",
+  "Request not confirmed": "Request not confirmed",
+  "If it reached Spideli Finance before the connection was lost, Try again shows it as done: nothing is ever paid twice.": "If it reached Spideli Finance before the connection was lost, Try again shows it as done: nothing is ever paid twice.",
+  "Money sent": "Money sent",
+  "@name received the money.": "@name received the money.",
 };

@@ -615,7 +615,7 @@ class _BillPaymentScreenState extends State<BillPaymentScreen> {
           status: status.isEmpty ? null : status,
           statusLabel: PaymentFlow.label(status).tr,
           icon: _icon(category),
-          below: reason.isEmpty ? null : DsInlineAlert(tone: FinStatus.tone(status), title: "Reason".tr, message: reason),
+          below: reason.isEmpty ? null : DsInlineAlert(tone: FinStatus.tone(status), title: "Reason".tr, message: financeReasonText(reason).tr),
         ),
         if (status == 'completed' && token.isNotEmpty)
           _TokenCard(label: tokenLabel.isEmpty ? "Your code".tr : tokenLabel, token: token, units: (p['units'] ?? '').toString()),

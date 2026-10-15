@@ -177,6 +177,7 @@ abstract final class DsTheme {
         labelStyle: DsTypography.body.copyWith(color: c.textSecondary),
         floatingLabelStyle: DsTypography.labelSm.copyWith(color: c.brandStrong),
         helperStyle: DsTypography.caption.copyWith(color: c.textMuted),
+        helperMaxLines: 3,
         errorStyle: DsTypography.caption.copyWith(color: c.danger),
         prefixIconColor: c.textMuted,
         suffixIconColor: c.textMuted,

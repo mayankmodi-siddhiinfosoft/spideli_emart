@@ -1,0 +1,5 @@
+# copied from ../../firestore.rules.draft by start.sh
+firestore.rules
+*.log
+data/
+uids.json

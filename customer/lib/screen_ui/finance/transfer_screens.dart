@@ -422,7 +422,9 @@ class _HistoryState extends State<_History> {
   Widget _row(BuildContext context, Map<String, dynamic> t, String uid) {
     final bool out = t['senderId'] == uid;
     final String cur = t['currency']?.toString() ?? '';
-    final int amount = FinanceSummary.intOf(out ? t['amount'] : (t['receiveAmount'] ?? t['amount']));
+    // What left the sender's wallet (fee included), as on the transfer page;
+    // what reached the recipient for an incoming transfer.
+    final int amount = FinanceSummary.intOf(out ? (t['total'] ?? t['amount']) : (t['receiveAmount'] ?? t['amount']));
     final int signed = out ? -amount : amount;
     final String status = t['status']?.toString() ?? '';
     final String channel = t['channel']?.toString() ?? '';
@@ -800,13 +802,22 @@ class _TransferConfirmScreenState extends State<TransferConfirmScreen> {
       amount: d.total,
       currency: d.currency,
       methods: widget.config.sourceMethods,
+      // The sender sent money: say so, not "Payment received".
+      doneTitle: d.channel == 'internal' ? "Money sent".tr : null,
+      doneMessage: d.channel == 'internal' ? "@name received the money.".trParams({'name': d.recipientName}) : null,
       submit: (payment) async {
         final reply = await FinanceTransferService.send(widget.config, d, payment.funding);
         transferId = reply['transferId']?.toString();
         return reply;
       },
     );
-    if (transferId != null && mounted) Get.off(() => TransferScreen(transferId: transferId!, config: widget.config));
+    if (transferId != null && mounted) {
+      // The transfer page replaces this confirmation AND the form below it:
+      // Back then returns to where the user started, never to a filled form
+      // that invites an accidental second send.
+      Get.back();
+      Get.off(() => TransferScreen(transferId: transferId!, config: widget.config));
+    }
   }
 
   @override
@@ -931,10 +942,12 @@ class _TransferScreenState extends State<TransferScreen> {
                       child: DsBadge(label: "Recipient verified".tr, tone: DsTone.success, icon: Icons.verified_rounded, small: true),
                     ),
                   if (verified && reason.isNotEmpty) const DsGap(DsSpace.sm),
-                  if (reason.isNotEmpty) DsInlineAlert(tone: FinStatus.tone(status), title: "Reason".tr, message: reason),
+                  if (reason.isNotEmpty) DsInlineAlert(tone: FinStatus.tone(status), title: "Reason".tr, message: financeReasonText(reason).tr),
                 ]),
         ),
         if (track != null) FinSection(title: "Status".tr, padding: const EdgeInsets.all(DsSpace.lg), children: [track]),
+        if (out && (status == 'reversed' || status == 'cancelled'))
+          FinNotice("This transfer was not sent: the money is back in your wallet.".tr, tone: DsTone.info),
         if (out && status == 'processing')
           FinNotice(
             (cancelAsked

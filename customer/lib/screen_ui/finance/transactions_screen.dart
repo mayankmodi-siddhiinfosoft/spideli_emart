@@ -245,9 +245,37 @@ class _TransactionListState extends State<TransactionList> {
   static const int _searchPages = 4;
   int _searched = 0;
 
+  /// The pages are read once; this watch of the newest posting reloads them
+  /// when the user's ledger changes, so a list that stays on screen (the
+  /// home's recent activity, the wallet tab) shows a new payment at once.
+  StreamSubscription<String?>? _watch;
+  String? _latest;
+
+  /// Bumped by [_reload]: a page that arrives for an older generation is dropped.
+  int _generation = 0;
+
   @override
   void initState() {
     super.initState();
+    _load();
+    _watch = FinanceService.latestTransaction().listen((latest) {
+      if (_latest != null && latest != _latest) _reload();
+      _latest = latest;
+    }, onError: (_) {});
+  }
+
+  @override
+  void dispose() {
+    _watch?.cancel();
+    super.dispose();
+  }
+
+  void _reload() {
+    if (!mounted) return;
+    _generation++;
+    _docs.clear();
+    _more = true;
+    _searched = 0;
     _load();
   }
 
@@ -261,6 +289,7 @@ class _TransactionListState extends State<TransactionList> {
   }
 
   Future<void> _load() async {
+    final int generation = _generation;
     setState(() {
       _loading = true;
       _error = false;
@@ -272,6 +301,7 @@ class _TransactionListState extends State<TransactionList> {
         _sides.isEmpty ? FinanceService.myAccounts().first : Future<Object?>.value(),
         FinanceService.transactionsPage(after: _docs.isEmpty ? null : _docs.last, type: widget.type, from: widget.from, to: widget.to, limit: widget.limit),
       ]);
+      if (generation != _generation) return;
       if (res[0] is List) {
         _sides = {for (final a in res[0] as List<Map<String, dynamic>>) a['id'].toString(): a['normalSide'].toString()};
       }
@@ -279,6 +309,7 @@ class _TransactionListState extends State<TransactionList> {
       _docs.addAll(page.docs);
       _more = page.docs.length == widget.limit;
     } catch (_) {
+      if (generation != _generation) return;
       _error = true;
     }
     if (!mounted) return;

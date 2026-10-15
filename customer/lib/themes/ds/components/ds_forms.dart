@@ -45,6 +45,9 @@ abstract final class DsInputDecoration {
       helperStyle: DsTypography.caption.copyWith(color: c.textMuted),
       errorStyle: DsTypography.caption.copyWith(color: c.danger),
       errorMaxLines: 3,
+      // Hints such as "1 000 XAF - 1 000 000 XAF · Available balance: …" wrap
+      // instead of losing their end to an ellipsis on a phone.
+      helperMaxLines: 3,
       prefixIcon: prefix ?? (prefixIcon != null ? Icon(prefixIcon, size: 20) : null),
       prefixIconConstraints: const BoxConstraints(minWidth: 44, minHeight: 44),
       suffixIcon: suffix,

@@ -5,9 +5,12 @@ import 'package:customer/themes/ds/ds.dart';
 import 'package:customer/themes/easy_loading_config.dart';
 import 'package:customer/utils/notification_service.dart';
 import 'package:customer/utils/preferences.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cupertino_ui/cupertino_ui.dart' as cupertino_ui;
 import 'package:firebase_app_check/firebase_app_check.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -22,6 +25,17 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   FirebaseApp firebaseApp = await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  // Local test environment (QA and client demos): compiled in only with
+  // --dart-define=USE_FIREBASE_EMULATOR=true. Every sign-in, read, write and
+  // upload then goes to the Firebase emulators on the developer's computer
+  // (finance/qa-env), never to the live project. 10.0.2.2 is that computer
+  // as seen from an Android emulator; pass FIREBASE_EMULATOR_HOST otherwise.
+  if (const bool.fromEnvironment('USE_FIREBASE_EMULATOR')) {
+    const String host = String.fromEnvironment('FIREBASE_EMULATOR_HOST', defaultValue: '10.0.2.2');
+    await FirebaseAuth.instance.useAuthEmulator(host, 9099);
+    FirebaseFirestore.instance.useFirestoreEmulator(host, 8080);
+    await FirebaseStorage.instance.useStorageEmulator(host, 9199);
+  }
   // App Check: the Spideli Finance functions refuse calls without a valid
   // token (finance/README.md). Debug builds use the debug provider (register
   // its token in the Firebase console); activating it changes nothing for the

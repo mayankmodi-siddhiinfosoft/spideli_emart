@@ -183,6 +183,37 @@ abstract final class FinanceLedger {
   }
 
   /// Adds [writes] to [batch].
+  /// [apply] inside a transaction: the writes reach the server together or
+  /// not at all, and are never queued offline (see [FinanceLedger.commit]).
+  static void applyTx(Transaction t, Iterable<FinanceWrite> writes, {FirebaseFirestore? db}) {
+    final store = db ?? FirebaseFirestore.instance;
+    for (final w in writes) {
+      final ref = store.doc(w.path);
+      switch (w.op) {
+        case 'create':
+          t.set(ref, w.data);
+        case 'update':
+          t.update(ref, w.data);
+        default:
+          t.set(ref, w.data, SetOptions(merge: true));
+      }
+    }
+  }
+
+  /// Commits [writes] all or nothing, ONLINE ONLY. A batch would be queued
+  /// by Firestore when the device is offline and sent later, after the app
+  /// had said the payment failed (money moved behind the customer's back);
+  /// a transaction is never queued: it reaches the server within [timeout]
+  /// or fails. An attempt that may have reached the server is settled by the
+  /// caller's retry, which reads the request back (never paid twice).
+  static Future<void> commit(Iterable<FinanceWrite> writes, {FirebaseFirestore? db, Duration timeout = const Duration(seconds: 30)}) {
+    final store = db ?? FirebaseFirestore.instance;
+    final list = writes.toList();
+    return store
+        .runTransaction<void>((t) async => applyTx(t, list, db: store), timeout: timeout, maxAttempts: 1)
+        .timeout(timeout + const Duration(seconds: 10));
+  }
+
   static void apply(WriteBatch batch, Iterable<FinanceWrite> writes, {FirebaseFirestore? db}) {
     final store = db ?? FirebaseFirestore.instance;
     for (final w in writes) {

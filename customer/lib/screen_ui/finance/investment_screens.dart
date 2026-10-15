@@ -1595,7 +1595,7 @@ class InvestmentOrderScreen extends StatelessWidget {
                 )
               : null,
         ),
-        if ((o['reason'] ?? '').toString().isNotEmpty) FinNotice(o['reason'].toString(), title: "Reason".tr, tone: FinStatus.tone(status)),
+        if ((o['reason'] ?? '').toString().isNotEmpty) FinNotice(financeReasonText(o['reason'].toString()).tr, title: "Reason".tr, tone: FinStatus.tone(status)),
         if (!redemption && (status == 'paid' || status == 'processing'))
           FinNotice("Spideli allocates your units at the fund's next unit price. This page updates when it is done.".tr, title: "Units allocated by Spideli".tr, tone: DsTone.info),
         if (redemption && (status == 'submitted' || status == 'processing'))

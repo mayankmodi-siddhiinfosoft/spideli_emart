@@ -2884,4 +2884,11 @@ const Map<String, String> arAR = {
   "Electricity, water, TV, internet, taxes and more": "الكهرباء والمياه والتلفزيون والإنترنت والضرائب وغيرها",
   "New compared with": "جديد مقارنة بـ",
   "vs": "مقابل",
+  "Cancelled at your request.": "أُلغي بناءً على طلبك.",
+  "This transfer was not sent: the money is back in your wallet.": "لم يُرسل هذا التحويل: عادت الأموال إلى محفظتك.",
+  "Payment not confirmed": "لم يتم تأكيد الدفع",
+  "Request not confirmed": "لم يتم تأكيد الطلب",
+  "If it reached Spideli Finance before the connection was lost, Try again shows it as done: nothing is ever paid twice.": "إذا وصلت العملية إلى Spideli Finance قبل انقطاع الاتصال، فستظهرها إعادة المحاولة كمكتملة: لا يُدفع أي مبلغ مرتين أبدًا.",
+  "Money sent": "تم إرسال المال",
+  "@name received the money.": "استلم @name المال.",
 };

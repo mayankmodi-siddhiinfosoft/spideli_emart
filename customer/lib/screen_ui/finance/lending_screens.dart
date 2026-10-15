@@ -70,7 +70,7 @@ Future<void> _pay(
     FinancePaySheet.show(context, title: title, amount: amount, currency: currency, methods: methods, submit: (payment) => submit(payment.funding));
 
 /// The reason shown for a loan that ended: the group's vote, or the admin's words.
-String _reason(String reason) => reason == 'vote' ? "The members of your group did not approve the request.".tr : reason;
+String _reason(String reason) => financeReasonText(reason).tr;
 
 /// Builds with whether the admin's restriction blocks the user's loans
 /// (`users/{uid}.financeRestriction`, scope loans or all).

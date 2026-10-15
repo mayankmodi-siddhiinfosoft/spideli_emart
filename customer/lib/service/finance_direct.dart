@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:customer/service/finance_ledger.dart';
 import 'package:customer/service/finance_service.dart';
@@ -109,17 +111,24 @@ abstract final class FinancePay {
 abstract final class FinanceDirect {
   static FirebaseFirestore get _db => FirebaseFirestore.instance;
 
+  /// A lost connection (offline, timed out) as the finance `network` error.
+  static Object _connection(Object e) {
+    if (e is TimeoutException) return const FinanceException('network');
+    if (e is FirebaseException && (e.code == 'unavailable' || e.code == 'deadline-exceeded')) return const FinanceException('network');
+    return e;
+  }
+
   /// A refusal of the security rules, as the finance error the screens show.
   static Object _mapped(Object e) => e is FirebaseException && e.code == 'permission-denied' ? const FinanceException('permission_denied') : e;
 
-  /// Commits [writes] as one batch (all or nothing).
+  /// Commits [writes] all or nothing, online only ([FinanceLedger.commit]):
+  /// offline, the step fails with a connection error instead of waiting
+  /// forever or being sent later without the customer knowing.
   static Future<void> commit(Iterable<FinanceWrite> writes) async {
-    final batch = _db.batch();
-    FinanceLedger.apply(batch, writes, db: _db);
     try {
-      await batch.commit();
+      await FinanceLedger.commit(writes, db: _db);
     } catch (e) {
-      throw _mapped(e);
+      throw _connection(_mapped(e));
     }
   }
 

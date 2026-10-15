@@ -705,7 +705,7 @@ class _CardBody extends StatelessWidget {
         if (c.renewalRequested && c.replacedBy.isEmpty)
           FinNotice("Renewal requested. Your new card appears in your cards when the issuer has made it.".tr, tone: DsTone.info),
         if (c.status == 'frozen' && c.frozenBy != 'user') FinNotice("This card was frozen for your security. Contact support to unfreeze it.".tr, tone: DsTone.warning),
-        if (c.reason.isNotEmpty) FinNotice(c.reason, title: "Reason".tr, tone: FinStatus.tone(c.status)),
+        if (c.reason.isNotEmpty) FinNotice(financeReasonText(c.reason).tr, title: "Reason".tr, tone: FinStatus.tone(c.status)),
         if (renew)
           FinNotice(
             cfg.feeFor(cfg.renewalFee, c.currency) > 0

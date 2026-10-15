@@ -890,7 +890,7 @@ class _QuoteScreenState extends State<QuoteScreen> {
                   ),
                 ]),
         ),
-        if ((q['reason'] ?? '').toString().isNotEmpty) FinNotice(q['reason'].toString(), title: "Reason".tr, tone: FinStatus.tone(quote.status)),
+        if ((q['reason'] ?? '').toString().isNotEmpty) FinNotice(financeReasonText(q['reason'].toString()).tr, title: "Reason".tr, tone: FinStatus.tone(quote.status)),
         if (quote.status == 'requested') FinNotice("The insurer is preparing your quote. You are notified when it is ready.".tr, tone: DsTone.info),
         if (quote.status == 'quoted' && !canAccept) FinNotice("This quote is no longer valid. Request a new one.".tr, tone: DsTone.warning),
         FinSection(
@@ -1087,7 +1087,7 @@ class PolicyScreen extends StatelessWidget {
           statusLabel: InsuranceLabels.policy(status).tr,
           icon: _icon(p['category']?.toString()),
         ),
-        if ((p['reason'] ?? '').toString().isNotEmpty) FinNotice(p['reason'].toString(), title: "Reason".tr, tone: FinStatus.tone(status)),
+        if ((p['reason'] ?? '').toString().isNotEmpty) FinNotice(financeReasonText(p['reason'].toString()).tr, title: "Reason".tr, tone: FinStatus.tone(status)),
         if (status == 'pending_activation') FinNotice("We are waiting for the insurer to confirm your policy. You are covered only once it is active.".tr, tone: DsTone.info),
         if (status == 'lapsed') FinNotice("A premium was not paid: you are not covered. Pay it to restore your cover if the insurer allows it.".tr, tone: DsTone.danger),
         if (status == 'cancellation_requested') FinNotice("Your cancellation request was sent to the insurer. This page updates when it is done.".tr, tone: DsTone.info),

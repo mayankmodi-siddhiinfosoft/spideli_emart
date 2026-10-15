@@ -1,0 +1,16 @@
+rules_version = '2';
+// QA environment only (local emulator): a signed-in user may read and write
+// files under a folder named after their own uid, the layout the app uses
+// (kyc/{uid}/..., loan_documents/{uid}/..., insurance_claims/{uid}/...,
+// financing_documents/{uid}/...). Profile pictures and anything else: any
+// signed-in user. The live Storage rules are not part of this folder.
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /{folder}/{uid}/{rest=**} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+    match /{path=**} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}

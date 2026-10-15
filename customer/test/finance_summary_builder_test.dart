@@ -101,4 +101,22 @@ void main() {
     expect(s.monthly.last.moneyIn, 50000);
     expect(s.monthly.last.moneyOut, 8000);
   });
+
+  test('cash flow: a refunded payment and its refund count as neither money out nor money in', () {
+    final s = summary(FinanceSummarySources(
+      accounts: const [
+        {'id': 'w', 'kind': 'wallet', 'status': 'active', 'currency': 'XAF', 'balance': 1, 'normalSide': 'credit'},
+      ],
+      ledger: [
+        {'type': 'manual_adjustment', 'currency': 'XAF', 'createdAt': DateTime(2026, 10, 1), 'lines': [{'accountId': 'platform_XAF', 'direction': 'debit', 'amount': 500000}, {'accountId': 'w', 'direction': 'credit', 'amount': 500000}]},
+        {'id': 'tx1', 'type': 'withdrawal', 'currency': 'XAF', 'createdAt': DateTime(2026, 10, 2), 'lines': [{'accountId': 'w', 'direction': 'debit', 'amount': 20300}, {'accountId': 'platform_XAF', 'direction': 'credit', 'amount': 20300}]},
+        {'id': 'tx2', 'type': 'withdrawal', 'status': 'reversed', 'currency': 'XAF', 'createdAt': DateTime(2026, 10, 3), 'lines': [{'accountId': 'w', 'direction': 'debit', 'amount': 5150}, {'accountId': 'platform_XAF', 'direction': 'credit', 'amount': 5150}]},
+        {'type': 'reversal', 'reversalOf': 'tx2', 'currency': 'XAF', 'createdAt': DateTime(2026, 10, 3), 'lines': [{'accountId': 'platform_XAF', 'direction': 'debit', 'amount': 5150}, {'accountId': 'w', 'direction': 'credit', 'amount': 5150}]},
+      ],
+    ))!;
+    expect(s.monthly.last.moneyIn, 500000);
+    expect(s.monthly.last.moneyOut, 20300);
+    expect(s.monthly.last.moneyIn - s.monthly.last.moneyOut, 479700, reason: 'the net is the balance change');
+    expect(s.last30Days['withdrawals'], 20300);
+  });
 }

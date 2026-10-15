@@ -287,6 +287,16 @@ abstract final class FinanceService {
     return q.get();
   }
 
+  /// The id and status of the user's newest posting, live: lists of
+  /// transactions reload when it changes (a new payment, a refund).
+  static Stream<String?> latestTransaction() => _db
+      .collection('ledger_transactions')
+      .where('userIds', arrayContains: _uid)
+      .orderBy('createdAt', descending: true)
+      .limit(1)
+      .snapshots()
+      .map((s) => s.docs.isEmpty ? '' : '${s.docs.first.id}:${s.docs.first.data()['status'] ?? ''}');
+
   // ── Dashboard ─────────────────────────────────────────────────────────
 
   /// The dashboard totals, worked out on the device from the user's own

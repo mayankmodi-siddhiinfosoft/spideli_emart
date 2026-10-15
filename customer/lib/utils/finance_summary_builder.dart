@@ -179,7 +179,10 @@ abstract final class FinanceSummaryBuilder {
     final DateTime from30 = now.subtract(const Duration(days: 30));
     final DateTime from12 = DateTime(now.year - 1, now.month + 1);
     for (final t in s.ledger) {
-      if (t['status'] == 'reversed' || (t['currency'] ?? cur) != cur) continue;
+      // A reversed posting and the reversal that undid it cancel out: count
+      // neither, so the month's net is the balance's real change (a refunded
+      // withdrawal is neither money out nor money in).
+      if (t['status'] == 'reversed' || (t['type'] == 'reversal' && t['reversalOf'] != null) || (t['currency'] ?? cur) != cur) continue;
       final DateTime? at = toDate(t['createdAt']);
       if (at == null) continue;
       final lines = ((t['lines'] as List?) ?? const []).whereType<Map>().map((l) => Map<String, dynamic>.from(l)).toList();
