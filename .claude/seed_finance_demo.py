@@ -10,6 +10,13 @@
 #   python3 .claude/seed_finance_demo.py --uid <uid> --apply     # create it
 #   python3 .claude/seed_finance_demo.py --uid <uid> --delete    # remove it again
 #   python3 .claude/seed_finance_demo.py --uid <uid> --fix-monthly  # rewrite only the dashboard chart months
+#   python3 .claude/seed_finance_demo.py --uid <uid> --region <id> --set-region [--apply]
+#       # give the existing demo records their Finance region (only the
+#       # `regionId` field, only on documents with demo: true)
+#
+# Finance is per region (APP-SPEC-FINANCE-REGION-SETTINGS): the requests and
+# postings below carry `regionId`, the XAF region with Finance on
+# (Yaounde-Cameroun on live) unless --region names another.
 import datetime
 import json
 import sys
@@ -24,6 +31,14 @@ DELETE = '--delete' in sys.argv
 if '--uid' not in sys.argv:
     sys.exit('Usage: seed_finance_demo.py --uid <uid> [--apply | --delete]')
 UID = sys.argv[sys.argv.index('--uid') + 1]
+REGION = sys.argv[sys.argv.index('--region') + 1] if '--region' in sys.argv else 'RANln1qefPEoOuqlT0vy'  # Yaounde-Cameroun (XAF)
+SET_REGION = '--set-region' in sys.argv
+# The documents that carry their region (the app's FinanceRegionRules.regionCollections).
+REGION_COLLECTIONS = {
+    'wallet_operations', 'money_transfers', 'utility_payment_requests', 'virtual_cards', 'card_funding_requests',
+    'savings_goals', 'tontines', 'loan_applications', 'investment_subscriptions', 'insurance_quotes',
+    'financing_projects', 'financing_applications', 'kyc_applications', 'ledger_transactions',
+}
 NOW = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None, microsecond=0)
 CUR = 'XAF'
 
@@ -78,7 +93,8 @@ DOCS = []  # (collection, id, data)
 
 
 def add(collection, doc_id, data):
-    DOCS.append((collection, doc_id, {**data, 'demo': True}))
+    regional = {'regionId': REGION} if collection in REGION_COLLECTIONS else {}
+    DOCS.append((collection, doc_id, {**data, **regional, 'demo': True}))
 
 
 WALLET = 'demo_wallet'
@@ -285,7 +301,9 @@ if user is None:
     sys.exit('No users/{uid} document: check the uid.')
 fields = user.get('fields', {})
 mask = '&'.join(f'updateMask.fieldPaths={k}' for k in KYC_FIELDS)
-if DELETE:
+if SET_REGION:
+    print(f' - users/{{uid}}: left as is (only the demo records get regionId={REGION})')
+elif DELETE:
     if fields.get('demoKyc', {}).get('booleanValue'):
         status, body = request('PATCH', f'{BASE}/users/{UID}?{mask}&key={KEY}', {'fields': {}})
         print(' - users/{uid} kycStatus/kycLevel:', 'removed' if status == 200 else f'FAILED ({status}): {error(body)}')
@@ -298,6 +316,36 @@ elif APPLY:
     print(' - users/{uid} kycStatus=approved, kycLevel=full:', 'set' if status == 200 else f'FAILED ({status}): {error(body)}')
 else:
     print(' - users/{uid}: would set kycStatus=approved, kycLevel=full (only these fields)')
+
+if SET_REGION:
+    # Only `regionId`, only on an existing demo record (precondition: it exists).
+    done = failed = 0
+    for collection, doc_id, _ in DOCS:
+        if collection not in REGION_COLLECTIONS:
+            continue
+        path = f'{collection}/{doc_id}'
+        existing = get(path)
+        fields = (existing or {}).get('fields', {})
+        if not fields.get('demo', {}).get('booleanValue'):
+            print(f' - {path}: {"missing" if existing is None else "not a demo record"}, skipped')
+            continue
+        now = fields.get('regionId', {}).get('stringValue')
+        if now == REGION:
+            print(f' - {path}: regionId already {REGION}')
+            continue
+        if not APPLY:
+            print(f' - {path}: would set regionId={REGION} (now {now or "none"})')
+            continue
+        status, body = request('PATCH', f'{BASE}/{path}?updateMask.fieldPaths=regionId&currentDocument.exists=true&key={KEY}', {'fields': {'regionId': enc(REGION)}})
+        if status == 200:
+            done += 1
+            print(f' - {path}: regionId={REGION}')
+        else:
+            failed += 1
+            print(f' - {path}: FAILED ({status}): {error(body)}')
+    if APPLY:
+        print(f'Done: {done} updated, {failed} failed.')
+    sys.exit(0)
 
 created = skipped = failed = 0
 for collection, doc_id, data in DOCS:
