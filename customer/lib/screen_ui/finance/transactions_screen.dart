@@ -12,6 +12,7 @@ import 'package:customer/service/finance_service.dart';
 import 'package:customer/service/finance_wallet_service.dart';
 import 'package:customer/themes/ds/ds.dart';
 import 'package:customer/themes/show_toast_dialog.dart';
+import 'package:customer/utils/finance_region_rules.dart';
 import 'package:customer/utils/finance_rules.dart';
 import 'package:customer/utils/finance_wallet_rules.dart';
 import 'package:flutter/material.dart';
@@ -23,10 +24,6 @@ import 'package:intl/intl.dart';
 List<Map<String, dynamic>> activeWallets(List<Map<String, dynamic>> accounts) =>
     accounts.where((a) => a['status'] == 'active' && (a['kind'] ?? 'wallet') == 'wallet').toList();
 
-/// The wallet shown first (Home and Wallet alike): the one in the
-/// dashboard's currency, else the first.
-Map<String, dynamic>? preferredWallet(List<Map<String, dynamic>> wallets, String? currency) =>
-    wallets.where((w) => w['currency'] == currency).firstOrNull ?? wallets.firstOrNull;
 
 /// Spideli Finance > Wallet: the available balance, wallet actions (add
 /// money, withdraw, convert when the admin offers them in
@@ -104,7 +101,9 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                   final cfg = cfgSnap.data;
                   final bool failed = snap.hasError;
                   final wallets = activeWallets(snap.data ?? const []);
-                  final first = preferredWallet(wallets, summary.data?.currency);
+                  // The wallet in the region's currency first; with none, the region's currency.
+                  final String? regionCur = FinanceRegion.currency;
+                  final first = FinanceRegionRules.walletShown(wallets, regionCurrency: regionCur, fallbackCurrency: summary.data?.currency);
                   final others = wallets.where((w) => w != first).toList();
                   final String? shown = first?['currency']?.toString();
                   final hero = FinHero(
@@ -113,7 +112,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                     amount: failed
                         ? '—'
                         : first == null
-                            ? (snap.hasData ? FinanceMoney.format(0, summary.data?.currency ?? 'XAF') : '…')
+                            ? (snap.hasData ? FinanceMoney.format(0, FinanceRegionRules.emptyCurrency(regionCurrency: regionCur, fallback: summary.data?.currency)) : '…')
                             : FinanceMoney.format((first['balance'] as num?) ?? 0, first['currency']?.toString() ?? ''),
                     caption: failed
                         ? "Could not load your balances.".tr

@@ -169,6 +169,23 @@ abstract final class FinanceRegionRules {
     return data;
   }
 
+  /// The wallet the balance card shows first: the one in the region's
+  /// currency ([regionCurrency]), else the one in [fallbackCurrency] (the
+  /// summary's), else the first. Null when the customer holds none.
+  static Map<String, dynamic>? walletShown(List<Map<String, dynamic>> wallets, {String? regionCurrency, String? fallbackCurrency}) {
+    for (final c in [regionCurrency, fallbackCurrency]) {
+      if (c == null || c.isEmpty) continue;
+      for (final w in wallets) {
+        if (w['currency'] == c) return w;
+      }
+    }
+    return wallets.isEmpty ? null : wallets.first;
+  }
+
+  /// The currency an empty balance reads in: the region's, else [fallback].
+  static String emptyCurrency({String? regionCurrency, String? fallback}) =>
+      (regionCurrency ?? '').isNotEmpty ? regionCurrency! : ((fallback ?? '').isNotEmpty ? fallback! : 'XAF');
+
   /// Whether two reads of a settings document hold the same values (maps
   /// and lists compared by content): an unchanged document never reloads
   /// the screens.

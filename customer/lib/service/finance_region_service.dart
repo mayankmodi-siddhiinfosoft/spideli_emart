@@ -58,6 +58,15 @@ abstract final class FinanceRegion {
   /// Finance is not offered).
   static String? get currentId => _last?.regionId;
 
+  /// The currency of the customer's Finance region (`regions.currencyId` ->
+  /// `currencies.code`), when known: new requests are made in it.
+  static String? get currency {
+    final String? id = currentId;
+    if (id == null) return null;
+    final String code = RegionService.currencyById(_region(id)?.currencyId)?.code ?? RegionService.currencyForRegion(id)?.code ?? '';
+    return code.isEmpty ? null : code;
+  }
+
   /// A Finance dashboard opened: listen to the admin's changes.
   static void retain() {
     _sessions++;

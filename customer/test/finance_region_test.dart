@@ -136,6 +136,27 @@ void main() {
     });
   });
 
+  group('the balance card', () {
+    final xaf = {'id': 'wallet_u_XAF', 'currency': 'XAF', 'balance': 245000};
+    final inr = {'id': 'wallet_u_INR', 'currency': 'INR', 'balance': 500};
+
+    test('the wallet in the region\'s currency comes first', () {
+      expect(FinanceRegionRules.walletShown([xaf, inr], regionCurrency: 'INR', fallbackCurrency: 'XAF'), same(inr));
+    });
+
+    test('without one: the summary\'s currency, else the first wallet the customer holds', () {
+      expect(FinanceRegionRules.walletShown([inr, xaf], regionCurrency: 'EUR', fallbackCurrency: 'XAF'), same(xaf));
+      expect(FinanceRegionRules.walletShown([xaf], regionCurrency: 'INR'), same(xaf));
+      expect(FinanceRegionRules.walletShown(const [], regionCurrency: 'INR'), isNull);
+    });
+
+    test('no wallet yet: 0 in the region\'s currency (never a fixed XAF)', () {
+      expect(FinanceRegionRules.emptyCurrency(regionCurrency: 'INR', fallback: 'XAF'), 'INR');
+      expect(FinanceRegionRules.emptyCurrency(regionCurrency: null, fallback: 'XOF'), 'XOF');
+      expect(FinanceRegionRules.emptyCurrency(regionCurrency: '', fallback: null), 'XAF');
+    });
+  });
+
   group('a Finance push opens its record', () {
     ({FinanceTapKind kind, String id})? t(Map<String, dynamic> data) => FinancePushTap.targetOf(data);
 

@@ -20,6 +20,7 @@ import 'package:customer/service/finance_region_service.dart';
 import 'package:customer/service/finance_service.dart';
 import 'package:customer/service/finance_wallet_service.dart';
 import 'package:customer/themes/ds/ds.dart';
+import 'package:customer/utils/finance_region_rules.dart';
 import 'package:customer/utils/finance_rules.dart';
 import 'package:customer/utils/finance_wallet_rules.dart';
 import 'package:flutter/material.dart';
@@ -124,8 +125,10 @@ class _BalanceHero extends StatelessWidget {
         // balance on screen.
         final bool failed = snap.hasError;
         final wallets = activeWallets(snap.data ?? const []);
-        final preferred = preferredWallet(wallets, s?.currency);
-        final String cur = preferred?['currency']?.toString() ?? s?.currency ?? 'XAF';
+        // The wallet in the region's currency first; with none, the region's currency.
+        final String? regionCur = FinanceRegion.currency;
+        final preferred = FinanceRegionRules.walletShown(wallets, regionCurrency: regionCur, fallbackCurrency: s?.currency);
+        final String cur = preferred?['currency']?.toString() ?? FinanceRegionRules.emptyCurrency(regionCurrency: regionCur, fallback: s?.currency);
         final others = wallets.where((w) => w != preferred).toList();
         String m(dynamic v) => FinanceMoney.format(FinanceSummary.intOf(v), s?.currency ?? cur);
         final stats = <FinHeroStat>[
