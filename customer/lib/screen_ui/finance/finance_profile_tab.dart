@@ -5,6 +5,7 @@ import 'package:customer/screen_ui/finance/fin_ds.dart';
 import 'package:customer/screen_ui/finance/finance_chat_screens.dart';
 import 'package:customer/screen_ui/finance/finance_dashboard_screen.dart';
 import 'package:customer/screen_ui/finance/finance_home_screen.dart';
+import 'package:customer/screen_ui/finance/finance_region_gate.dart';
 import 'package:customer/screen_ui/finance/finance_restriction.dart';
 import 'package:customer/screen_ui/finance/kyc_screen.dart';
 import 'package:customer/screen_ui/finance/security_screens.dart';
@@ -89,6 +90,7 @@ class FinanceProfileTab extends StatelessWidget {
                     onTap: () => Get.to(() => const KycScreen()),
                   ),
                   _row(Icons.diversity_3_outlined, "Groups", subtitle: "Tontines, collective savings and loan groups", () => Get.to(() => const FinanceGroupsScreen())),
+                  const FinanceRegionTile(),
                   StreamBuilder<List<Map<String, dynamic>>>(
                     stream: FinanceService.myAccounts(),
                     builder: (context, accounts) {

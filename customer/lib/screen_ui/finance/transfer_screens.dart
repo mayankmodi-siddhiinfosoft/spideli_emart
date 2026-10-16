@@ -224,7 +224,7 @@ class _PaymentReceiptButtonState extends State<PaymentReceiptButton> {
 
 // ------------------------------------------------------------------ overview
 
-/// Spideli Finance > Send money. `platform_settings/transfers` must exist (admin).
+/// Spideli Finance > Send money. `finance_settings/{regionId}_transfers` must exist (admin).
 class TransfersScreen extends StatelessWidget {
   const TransfersScreen({super.key});
 

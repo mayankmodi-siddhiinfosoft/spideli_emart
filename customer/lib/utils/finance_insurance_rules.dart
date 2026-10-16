@@ -25,7 +25,7 @@ Map<String, dynamic> _map(dynamic v) => v is Map ? Map<String, dynamic>.from(v) 
 
 List<Map<String, dynamic>> _maps(dynamic v) => v is List ? v.whereType<Map>().map((m) => Map<String, dynamic>.from(m)).toList() : const [];
 
-/// `platform_settings/insurance` (admin). Null when missing or invalid.
+/// `finance_settings/{regionId}_insurance` (admin). Null when missing or invalid.
 class InsuranceConfig {
   final List<String> currencies;
   final List<String> categories;

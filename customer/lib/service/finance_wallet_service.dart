@@ -2,8 +2,10 @@ import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:customer/service/finance_group_service.dart';
 import 'package:customer/service/finance_ledger.dart';
 import 'package:customer/service/finance_payment_service.dart';
+import 'package:customer/service/finance_region_service.dart';
 import 'package:customer/service/finance_service.dart';
 import 'package:customer/utils/finance_payment_rules.dart';
+import 'package:customer/utils/finance_region_rules.dart';
 import 'package:customer/utils/finance_wallet_rules.dart';
 
 /// The Spideli Finance wallet's own operations, written directly to
@@ -19,8 +21,10 @@ abstract final class FinanceWalletService {
 
   static DateTime? _date(dynamic v) => v is Timestamp ? v.toDate() : null;
 
-  /// `platform_settings/wallet`, or null when the admin has not set it up.
-  static Future<WalletConfig?> config() async => WalletConfig.parse((await _db.collection('platform_settings').doc('wallet').get()).data());
+  /// The wallet settings of the customer's Finance region
+  /// (`finance_settings/{regionId}_wallet`), or null when the admin has not
+  /// set them up there.
+  static Future<WalletConfig?> config() async => WalletConfig.parse(await FinanceRegion.settings(FinanceModules.wallet));
 
   static Stream<Map<String, dynamic>?> operation(String id) =>
       _db.collection('wallet_operations').doc(id).snapshots().map((s) => s.data() == null ? null : {...s.data()!, 'id': s.id});
@@ -39,7 +43,8 @@ abstract final class FinanceWalletService {
   /// Deposits a gateway payment ([funding], [amount] charged) into the
   /// user's [currency] wallet, once per gateway payment: the operation's id
   /// is the payment's receipt id, so a retry finds it done. [purposeKind] /
-  /// [purposeId] name the request the money then pays (a transfer, a bill).
+  /// [purposeId] name the request the money then pays (a transfer, a bill),
+  /// [regionId] its region (default: the customer's Finance region).
   /// Returns the operation.
   static Future<Map<String, dynamic>> depositGateway({
     required FinanceFunding funding,
@@ -47,27 +52,31 @@ abstract final class FinanceWalletService {
     required int amount,
     String? purposeKind,
     String? purposeId,
+    String? regionId,
   }) async {
     if (funding.isWallet || funding.receiptId == null) throw const FinanceException('gateway_unavailable');
     if (amount <= 0) throw const FinanceException('amount_out_of_range');
     final String path = 'wallet_operations/${WalletRules.depositId(funding)}';
     final already = await _existing(path);
     if (already != null) return already;
+    final String region = regionId ?? await FinanceRegion.require();
     final ({String id, bool exists, int balance}) wallet;
     try {
       wallet = await FinanceLedger.wallet(_uid, currency);
     } catch (e) {
       throw FinancePaymentService.mapError(e);
     }
-    final writes = WalletRules.depositWrites(
-      uid: _uid,
-      currency: currency,
-      amount: amount,
-      funding: funding,
-      wallet: (id: wallet.id, exists: wallet.exists),
-      purposeKind: purposeKind,
-      purposeId: purposeId,
-    );
+    final writes = FinanceRegion.stamp(
+        WalletRules.depositWrites(
+          uid: _uid,
+          currency: currency,
+          amount: amount,
+          funding: funding,
+          wallet: (id: wallet.id, exists: wallet.exists),
+          purposeKind: purposeKind,
+          purposeId: purposeId,
+        ),
+        region);
     final done = await FinancePaymentService.commit(writes, guard: path);
     return done ?? {...writes.first.data, 'id': WalletRules.depositId(funding)};
   }
@@ -96,7 +105,7 @@ abstract final class FinanceWalletService {
   /// debited of amount + fee now, the admin pays out (or refunds).
   static Future<Map<String, dynamic>> withdraw({required WalletConfig config, required String currency, required int amount, required Map<String, dynamic> destination}) async {
     final String method = destination['method']?.toString() ?? '';
-    if (!config.withdraw.enabled || !config.withdraw.methods.contains(method)) throw const FinanceException('service_unavailable');
+    if (!config.withdraw.enabled || !config.withdraw.methods.contains(method) || !config.currencies.contains(currency)) throw const FinanceException('service_unavailable');
     if (config.withdraw.limits.problem(amount, currency) != null) throw const FinanceException('amount_out_of_range');
     await FinancePaymentService.requireAllowed('wallet');
     final int fee = WalletRules.withdrawFee(config, amount, currency);
@@ -108,17 +117,20 @@ abstract final class FinanceWalletService {
       FinanceRequestKeys.done(intent);
       return {'status': 'pending', 'reference': already['reference'] ?? '', 'operationId': id};
     }
+    final String region = await FinanceRegion.require();
     final wallet = await FinancePaymentService.requireBalance(currency, amount + fee);
-    final writes = WalletRules.withdrawWrites(
-      uid: _uid,
-      opId: id,
-      currency: currency,
-      amount: amount,
-      fee: fee,
-      destination: destination,
-      walletId: wallet.id,
-      txId: FinancePaymentService.txIdOf(id),
-    );
+    final writes = FinanceRegion.stamp(
+        WalletRules.withdrawWrites(
+          uid: _uid,
+          opId: id,
+          currency: currency,
+          amount: amount,
+          fee: fee,
+          destination: destination,
+          walletId: wallet.id,
+          txId: FinancePaymentService.txIdOf(id),
+        ),
+        region);
     final done = await FinancePaymentService.commit(writes, guard: 'wallet_operations/$id');
     FinanceRequestKeys.done(intent);
     return {'status': 'pending', 'reference': done?['reference'] ?? _referenceOf(writes, 'wallet_operations/$id'), 'operationId': id};
@@ -163,6 +175,7 @@ abstract final class FinanceWalletService {
       FinanceRequestKeys.done(intent);
       return {'status': 'succeeded', 'reference': already['reference'] ?? '', 'operationId': id};
     }
+    final String region = await FinanceRegion.require();
     final fromWallet = await FinancePaymentService.requireBalance(from, amount);
     final ({String id, bool exists, int balance}) toWallet;
     try {
@@ -171,7 +184,7 @@ abstract final class FinanceWalletService {
       throw FinancePaymentService.mapError(e);
     }
     final String tx = FinancePaymentService.txIdOf(id);
-    final writes = WalletRules.convertWrites(
+    final writes = FinanceRegion.stamp(WalletRules.convertWrites(
       uid: _uid,
       opId: id,
       c: c,
@@ -182,7 +195,7 @@ abstract final class FinanceWalletService {
       rateSource: r.source,
       rateObservedAt: r.observedAt,
       rateSnapshotId: r.id,
-    );
+    ), region);
     final done = await FinancePaymentService.commit(writes, guard: 'wallet_operations/$id');
     FinanceRequestKeys.done(intent);
     return {'status': 'succeeded', 'reference': done?['reference'] ?? _referenceOf(writes, 'wallet_operations/$id'), 'operationId': id};

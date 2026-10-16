@@ -4,6 +4,7 @@ import 'package:customer/screen_ui/finance/finance_ui.dart';
 import 'package:customer/screen_ui/finance/finance_widgets.dart';
 import 'package:customer/service/finance_chat_service.dart';
 import 'package:customer/service/finance_group_service.dart';
+import 'package:customer/service/finance_region_service.dart';
 import 'package:customer/service/finance_service.dart';
 import 'package:customer/themes/ds/ds.dart';
 import 'package:customer/themes/show_toast_dialog.dart';
@@ -64,7 +65,7 @@ Widget _quiet(BuildContext context, String text) => Padding(
     );
 
 /// Spideli Finance > Savings goals: the user's goals and invitations.
-/// `platform_settings/savings` must exist (admin), else "not available";
+/// `finance_settings/{regionId}_savings` must exist (admin), else "not available";
 /// a failed read offers Retry.
 class SavingsListScreen extends StatelessWidget {
   const SavingsListScreen({super.key});
@@ -597,13 +598,13 @@ class _SavingsGoalScreenState extends State<SavingsGoalScreen> {
   late Stream<List<Map<String, dynamic>>> _contributions = FinanceGroupService.goalContributions(widget.goalId);
   late Stream<List<Map<String, dynamic>>> _withdrawals = FinanceGroupService.goalWithdrawals(widget.goalId);
 
-  /// Read once; without it the goal still shows (wallet payments only).
-  late final Future<SavingsConfig?> _config = FinanceGroupService.savingsConfig().catchError((_) => null);
+  /// Live; without it the goal still shows (wallet payments only).
+  late final Stream<SavingsConfig?> _config = FinanceRegion.live(() => FinanceGroupService.savingsConfig().catchError((_) => null));
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<SavingsConfig?>(
-      future: _config,
+    return StreamBuilder<SavingsConfig?>(
+      stream: _config,
       builder: (context, cfgSnap) => StreamBuilder<SavingsGoal?>(
         stream: _goal,
         builder: (context, snap) {
@@ -944,11 +945,14 @@ class _GoalBody extends StatelessWidget {
 
   Widget _withdrawal(BuildContext context, Map<String, dynamic> w) {
     final String status = w['status']?.toString() ?? '';
-    final String reason = (w['reason'] ?? '').toString();
+    final String reason = (w['reason'] ?? '').toString().trim();
+    // The admin's reason for refusing it; the member's own reason stays.
+    final String refusal = status == 'rejected' ? (w['rejectionReason'] ?? '').toString().trim() : '';
+    final String subtitle = [if (reason.isNotEmpty) reason, if (refusal.isNotEmpty) "Refused: @reason".trParams({'reason': refusal})].join('\n');
     return FinListTile(
       icon: Icons.north_east_rounded,
       title: FinanceUi.date(w['createdAt']),
-      subtitle: reason.isEmpty ? null : reason,
+      subtitle: subtitle.isEmpty ? null : subtitle,
       amount: FinanceMoney.signed(-FinanceSummary.intOf(w['amount']), w['currency']?.toString() ?? goal.currency),
       amountColor: status == 'rejected' ? DsColors.of(context).textMuted : null,
       status: status,

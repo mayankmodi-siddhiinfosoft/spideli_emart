@@ -94,7 +94,7 @@ class ChannelConfig {
   int? maxFor(String c) => max[c] != null && max[c]! > 0 ? max[c] : null;
 }
 
-/// `platform_settings/transfers` (admin). Null when missing or invalid.
+/// `finance_settings/{regionId}_transfers` (admin). Null when missing or invalid.
 class TransferConfig {
   final List<String> currencies;
   final Map<String, ChannelConfig> channels;
@@ -205,7 +205,7 @@ abstract final class PaymentFlow {
 
 // ------------------------------------------------------------------- bills
 
-/// `platform_settings/bills` (admin). Null when missing or invalid.
+/// `finance_settings/{regionId}_bills` (admin). Null when missing or invalid.
 class BillsConfig {
   final List<String> currencies;
   final List<String> categories;

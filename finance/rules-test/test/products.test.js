@@ -4,7 +4,7 @@
 import { describe, it, beforeEach } from 'node:test';
 import {
   setUp, as, ALICE, BOB, CAROL, MALLORY, plan, batchOf, create, update, merge, patch, read, newKey, walletId, platformId,
-  SERVER_TIME, seed, union, later, day, DELETE,
+  SERVER_TIME, seed, union, later, day, DELETE, REGION,
 } from '../lib/fixtures.js';
 import { allowed, denied, assert } from '../lib/expect.js';
 
@@ -73,16 +73,17 @@ describe('catalogs and owner-only records', () => {
     allowed(await as(ALICE).query('market_securities', { where: [['published', '==', true]] }));
     denied(await as(ALICE).query('market_securities', {}), 'an unfiltered query would include drafts');
     denied(await new (await import('../lib/firestore-rest.js')).Client(null).get('market_securities/pub'), 'signed out');
-    allowed(await as(ALICE).get('platform_settings/wallet'));
+    allowed(await as(ALICE).get(`finance_settings/${REGION}_wallet`));
+    allowed(await as(ALICE).get('platform_settings/wallet'), 'the old global documents stay readable');
     allowed(await as(ALICE).query('exchange_rate_snapshots', { where: [['pair', '==', 'EUR_XAF']], orderBy: [['observedAt', 'desc']] }));
-    denied(await as(ALICE).commit(batchOf([update('platform_settings/wallet', { deposit: { enabled: true, max: { XAF: 999999999 } } })])), 'settings are the admin\'s');
+    denied(await as(ALICE).commit(batchOf([update(`finance_settings/${REGION}_wallet`, { deposit: { enabled: true, max: { XAF: 999999999 } } })])), 'settings are the admin\'s');
     denied(await as(ALICE).commit(batchOf([create('market_securities/x', { published: true })])));
     denied(await as(ALICE).get('insurance_partners/p1'), 'admin only');
   });
 
   it('an admin (role) writes and reads everything through the admin wildcard', async () => {
     await seed({ 'users/root': { role: 'admin' } });
-    allowed(await as('root').commit(batchOf([update('platform_settings/wallet', { 'deposit.enabled': false }), update(`users/${ALICE}`, { kycLevel: 'basic', kycStatus: 'approved' })])));
+    allowed(await as('root').commit(batchOf([update(`finance_settings/${REGION}_wallet`, { 'deposit.enabled': false }), update(`users/${ALICE}`, { kycLevel: 'basic', kycStatus: 'approved' })])));
     allowed(await as('root').get('market_securities/draft'));
   });
 });
@@ -95,7 +96,7 @@ describe('investments, insurance, financing, intelligence', () => {
       [`investment_holdings/${ALICE}_f1`]: { userId: ALICE, fundId: 'f1', units: 10, redeemableValue: 20000 },
       'insurance_products/p1': { published: true, status: 'open', name: 'Health', currency: 'XAF', partnerName: 'Insurer', category: 'health', rating: { frequencies: { annual: 0 } } },
       'insurance_quotes/q1': { id: 'q1', userId: ALICE, productId: 'p1', currency: 'XAF', status: 'quoted', premium: 60000, installmentAmount: 60000, frequency: 'annual', termsVersion: 1, validUntil: later(day) },
-      'platform_settings/financing': { currencies: ['XAF'], financingTypes: ['loan'], sectors: ['commerce'], stages: ['startup'], documentTypes: ['business_plan'], minAmount: { XAF: 500000 }, maxAmount: { XAF: 50000000 }, durationsMonths: [12], allowedContentTypes: ['application/pdf'], maxFileBytes: 20971520 },
+      [`finance_settings/${REGION}_financing`]: { currencies: ['XAF'], financingTypes: ['loan'], sectors: ['commerce'], stages: ['startup'], documentTypes: ['business_plan'], minAmount: { XAF: 500000 }, maxAmount: { XAF: 50000000 }, durationsMonths: [12], allowedContentTypes: ['application/pdf'], maxFileBytes: 20971520 },
       'investment_opportunities/o1': { published: true, status: 'open', title: 'Farm', currency: 'XAF' },
     });
   });

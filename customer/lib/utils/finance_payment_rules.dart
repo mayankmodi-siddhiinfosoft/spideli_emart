@@ -4,7 +4,7 @@
 /// messages of the refusals the app itself raises. Unit tested in
 /// test/finance_payment_test.dart.
 ///
-/// Module methods (`platform_settings/*.paymentMethods`) -> what the pay sheet offers:
+/// Module methods (`finance_settings/{regionId}_*.paymentMethods`) -> what the pay sheet offers:
 /// - `wallet`       -> the Spideli Finance wallet (balance shown; refused when too low);
 /// - `mobile_money` -> Orange Money, Flutterwave (its Mobile Money checkout), PayStack;
 /// - `wave`         -> Flutterwave (its checkout offers Wave where Wave operates);

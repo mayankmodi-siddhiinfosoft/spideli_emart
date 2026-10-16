@@ -59,7 +59,7 @@ abstract final class Frequency {
       };
 }
 
-/// `platform_settings/savings` (admin). Null when missing or malformed: the
+/// The savings settings of a region (`finance_settings/{regionId}_savings`, admin). Null when missing or malformed: the
 /// app then says savings goals are not available.
 class SavingsConfig {
   final List<String> purposes;
@@ -99,7 +99,7 @@ class SavingsConfig {
   }
 }
 
-/// `platform_settings/tontines` (admin).
+/// The tontine settings of a region (`finance_settings/{regionId}_tontines`, admin).
 class TontineConfig {
   final List<String> currencies;
   final List<String> frequencies;
@@ -163,6 +163,9 @@ class SavingsGoal {
   final String? frequency;
   final int scheduleAmount;
 
+  /// The region it was created in (`regionId`): its savings settings apply.
+  final String regionId;
+
   const SavingsGoal({
     required this.id,
     required this.name,
@@ -178,6 +181,7 @@ class SavingsGoal {
     required this.status,
     required this.frequency,
     required this.scheduleAmount,
+    this.regionId = '',
   });
 
   static SavingsGoal fromMap(Map<String, dynamic> m, DateTime? Function(dynamic) toDate) {
@@ -197,6 +201,7 @@ class SavingsGoal {
       status: m['status']?.toString() ?? 'active',
       frequency: Frequency.all.contains(schedule['frequency']) ? schedule['frequency'].toString() : null,
       scheduleAmount: _int(schedule['amount']),
+      regionId: m['regionId']?.toString() ?? '',
     );
   }
 
@@ -275,6 +280,9 @@ class Tontine {
   final DateTime? startDate;
   final DateTime? nextDueAt;
 
+  /// The region it was created in (`regionId`): its tontine settings apply.
+  final String regionId;
+
   const Tontine({
     required this.id,
     required this.name,
@@ -291,6 +299,7 @@ class Tontine {
     required this.currentCycle,
     required this.startDate,
     required this.nextDueAt,
+    this.regionId = '',
   });
 
   static Tontine fromMap(Map<String, dynamic> m, DateTime? Function(dynamic) toDate) => Tontine(
@@ -309,6 +318,7 @@ class Tontine {
         currentCycle: _int(m['currentCycle']),
         startDate: toDate(m['startDate']),
         nextDueAt: toDate(m['nextDueAt']),
+        regionId: m['regionId']?.toString() ?? '',
       );
 
   bool isAdmin(String uid) => adminIds.contains(uid);

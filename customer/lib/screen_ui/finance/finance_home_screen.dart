@@ -16,6 +16,7 @@ import 'package:customer/screen_ui/finance/tontine_screens.dart';
 import 'package:customer/screen_ui/finance/transactions_screen.dart';
 import 'package:customer/screen_ui/finance/transfer_screens.dart';
 import 'package:customer/screen_ui/finance/wallet_screens.dart';
+import 'package:customer/service/finance_region_service.dart';
 import 'package:customer/service/finance_service.dart';
 import 'package:customer/service/finance_wallet_service.dart';
 import 'package:customer/themes/ds/ds.dart';
@@ -110,8 +111,8 @@ class _BalanceHero extends StatelessWidget {
 
   const _BalanceHero({required this.summary});
 
-  /// The wallet settings, read once (which money actions to offer).
-  static final Future<WalletConfig?> _walletConfig = FinanceWalletService.config().catchError((Object _) => null);
+  /// The wallet settings of the customer's region, live (which money actions to offer).
+  static final Stream<WalletConfig?> _walletConfig = FinanceRegion.live(() => FinanceWalletService.config().catchError((Object _) => null));
 
   @override
   Widget build(BuildContext context) {
@@ -148,8 +149,8 @@ class _BalanceHero extends StatelessWidget {
           stats: stats,
         );
         // The actions sit under the card, as round buttons on the page.
-        final actions = FutureBuilder<WalletConfig?>(
-            future: _walletConfig,
+        final actions = StreamBuilder<WalletConfig?>(
+            stream: _walletConfig,
             builder: (context, cfg) {
               final w = cfg.data;
               final String main = preferred?['currency']?.toString() ?? cur;

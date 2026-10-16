@@ -35,7 +35,7 @@ abstract final class SecureDetailsMode {
   static const String none = 'none';
 }
 
-/// `platform_settings/cards` (admin). Null when missing or invalid.
+/// The cards settings of a region (`finance_settings/{regionId}_cards`, admin). Null when missing or invalid.
 class CardConfig {
   final List<String> currencies;
   final String issuerName;
@@ -156,6 +156,9 @@ class VirtualCard {
   /// the new card and sets [replacedBy].
   final bool renewalRequested;
 
+  /// The region it was requested in (`regionId`): its settings apply.
+  final String regionId;
+
   const VirtualCard({
     required this.id,
     required this.label,
@@ -171,6 +174,7 @@ class VirtualCard {
     required this.replacedBy,
     required this.reason,
     this.renewalRequested = false,
+    this.regionId = '',
   });
 
   static VirtualCard fromMap(Map<String, dynamic> m) {
@@ -190,6 +194,7 @@ class VirtualCard {
       replacedBy: m['replacedBy']?.toString() ?? '',
       reason: m['reason']?.toString() ?? '',
       renewalRequested: m['renewalRequestedAt'] != null,
+      regionId: m['regionId']?.toString() ?? '',
     );
   }
 

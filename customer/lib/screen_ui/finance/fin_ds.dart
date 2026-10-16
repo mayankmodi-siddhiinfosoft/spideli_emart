@@ -8,8 +8,10 @@
 /// semantic color only for states; one status catalogue for every module.
 library;
 
+import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:customer/service/finance_region_service.dart';
 import 'package:customer/themes/ds/ds.dart';
 import 'package:customer/utils/finance_rules.dart';
 import 'package:flutter/material.dart';
@@ -1175,9 +1177,11 @@ class FinConfigState<T> {
   }
 }
 
-/// Loads a service's configuration once (`platform_settings/*`) and builds
-/// with its state; Retry loads it again. A failed read is never shown as
-/// "not available".
+/// Loads a service's configuration (`finance_settings/{regionId}_*`) and builds
+/// with its state; Retry loads it again, and so does a change the admin makes
+/// to the customer's region or its settings (FinanceRegion.changes), keeping
+/// the screen as it is while the new values load. A failed read is never
+/// shown as "not available".
 class FinConfig<T> extends StatefulWidget {
   final Future<T?> Function() load;
   final Widget Function(BuildContext context, FinConfigState<T> state) builder;
@@ -1190,16 +1194,36 @@ class FinConfig<T> extends StatefulWidget {
 
 class _FinConfigState<T> extends State<FinConfig<T>> {
   late Future<T?> _future = widget.load();
+  StreamSubscription<void>? _changes;
+
+  @override
+  void initState() {
+    super.initState();
+    _changes = FinanceRegion.changes.listen((_) {
+      if (mounted) _retry();
+    });
+  }
+
+  @override
+  void dispose() {
+    _changes?.cancel();
+    super.dispose();
+  }
 
   void _retry() => setState(() => _future = widget.load());
 
   @override
   Widget build(BuildContext context) => FutureBuilder<T?>(
     future: _future,
-    builder: (context, snap) => widget.builder(
-      context,
-      FinConfigState<T>._(config: snap.data, loading: snap.connectionState == ConnectionState.waiting, failed: snap.hasError, retry: _retry),
-    ),
+    builder: (context, snap) {
+      // Reloading after a change keeps the values shown until the new ones arrive.
+      final bool waiting = snap.connectionState == ConnectionState.waiting;
+      final bool keep = waiting && snap.hasData;
+      return widget.builder(
+        context,
+        FinConfigState<T>._(config: snap.data, loading: waiting && !keep, failed: !keep && snap.hasError, retry: _retry),
+      );
+    },
   );
 }
 

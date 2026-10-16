@@ -11,7 +11,7 @@
 ///
 /// The schedule estimated before applying is labelled an estimate; the
 /// binding amounts are the agreement's (written by the last funder from
-/// `platform_settings/lending`), the binding dates are set at the pay-out.
+/// `finance_settings/{regionId}_lending`), the binding dates are set at the pay-out.
 library;
 
 import 'dart:math' as math;
@@ -26,7 +26,7 @@ double _num(dynamic v) => v is num ? v.toDouble() : double.tryParse('${v ?? ''}'
 
 List<String> _strings(dynamic v) => v is List ? v.map((e) => e.toString()).where((e) => e.isNotEmpty).toList() : const [];
 
-/// `platform_settings/lending` (admin). Null when missing or invalid.
+/// `finance_settings/{regionId}_lending` (admin). Null when missing or invalid.
 class LendingConfig {
   final List<String> currencies;
   final Map<String, int> minAmount;
@@ -240,7 +240,11 @@ class Loan {
     required this.votesNo,
     required this.votingEndsAt,
     required this.reason,
+    this.regionId = '',
   });
+
+  /// The region it was requested in (`regionId`): its lending settings apply.
+  final String regionId;
 
   static Loan fromMap(Map<String, dynamic> m, DateTime? Function(dynamic) toDate) {
     final votes = m['votes'] is Map ? Map<String, dynamic>.from(m['votes'] as Map) : const <String, dynamic>{};
@@ -265,6 +269,7 @@ class Loan {
       votesNo: _int(votes['no']),
       votingEndsAt: toDate(m['votingEndsAt']),
       reason: m['reason']?.toString(),
+      regionId: m['regionId']?.toString() ?? '',
     );
   }
 
@@ -575,7 +580,7 @@ abstract final class LoanPlans {
   }
 
   /// The agreement the last funder issues (version 1): the terms of
-  /// `platform_settings/lending` and the installments of [LoanCalculator]
+  /// `finance_settings/{regionId}_lending` and the installments of [LoanCalculator]
   /// (amounts only: the dates are set at the pay-out).
   static Map<String, dynamic> agreement(Loan l, LendingConfig cfg, DateTime now) {
     final e = LoanCalculator.estimate(

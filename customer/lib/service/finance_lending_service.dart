@@ -6,10 +6,12 @@ import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:customer/service/finance_direct.dart' show FinancePay;
 import 'package:customer/service/finance_group_service.dart';
 import 'package:customer/service/finance_ledger.dart';
+import 'package:customer/service/finance_region_service.dart';
 import 'package:customer/service/finance_service.dart';
 import 'package:customer/service/push_message.dart';
 import 'package:customer/service/send_notification.dart';
 import 'package:customer/utils/finance_lending_rules.dart';
+import 'package:customer/utils/finance_region_rules.dart';
 import 'package:customer/utils/finance_rules.dart';
 import 'package:customer/utils/finance_security_rules.dart';
 import 'package:firebase_storage/firebase_storage.dart';
@@ -34,7 +36,13 @@ abstract final class FinanceLendingService {
   static FirebaseFirestore get _db => FirebaseFirestore.instance;
   static String get _uid => FinanceService.uid;
 
-  static Future<LendingConfig?> config() async => LendingConfig.parse((await _db.collection('platform_settings').doc('lending').get()).data());
+  /// The lending settings of [regionId] (a loan's own region), else of the
+  /// customer's Finance region (`finance_settings/{regionId}_lending`).
+  static Future<LendingConfig?> config({String? regionId}) async => LendingConfig.parse(await FinanceRegion.settings(FinanceModules.lending, regionId: regionId));
+
+  /// The region of a stored loan (its own), else the customer's: its
+  /// settings apply and its postings carry it.
+  static String? _regionOf(Loan loan) => loan.regionId.isNotEmpty ? loan.regionId : FinanceRegion.currentId;
 
   static Loan? _parse(DocumentSnapshot<Map<String, dynamic>> s) => s.data() == null ? null : Loan.fromMap({...s.data()!, 'id': s.id}, FinanceGroupService.toDate);
 
@@ -120,7 +128,10 @@ abstract final class FinanceLendingService {
       restricted: await _restricted(),
     );
     if (problem != null) throw FinanceException(problem);
-    await _commit(
+    final String regionId = await FinanceRegion.require();
+    final LendingConfig? regional = await FinanceLendingService.config(regionId: regionId);
+    if (regional == null || !regional.currencies.contains(currency)) throw const FinanceException('service_unavailable');
+    await _commit(FinanceRegion.stamp(
       LoanPlans.apply(
         loanId: loanId,
         uid: uid,
@@ -134,7 +145,8 @@ abstract final class FinanceLendingService {
         repaymentFrequency: repaymentFrequency,
         description: description,
       ),
-    );
+      regionId,
+    ));
   });
 
   /// Uploads a supporting photo to `loan_documents/{uid}/{loanId}/` (never
@@ -183,7 +195,8 @@ abstract final class FinanceLendingService {
   /// `funding` or `rejected`. Returns the loan's status after it.
   static Future<String> closeVote(String loanId) => _guard(() async {
     final String uid = _signedIn();
-    final cfg = await config();
+    final loan0 = await _loanOnce(loanId);
+    final cfg = await config(regionId: loan0 == null ? null : _regionOf(loan0));
     if (cfg == null) throw const FinanceException('state_changed');
     final r = await _transaction((tx) async {
       final loan = _parse(await tx.get(_loanRef(loanId)));
@@ -222,7 +235,7 @@ abstract final class FinanceLendingService {
     } on FinanceException catch (e) {
       // A gateway payment already taken is never lost: when the loan
       // can no longer take it, it goes to the user's wallet.
-      if (!funding.isWallet && _final.contains(e.reason)) return _keepInWallet(uid, funding, loan0.currency, amount, 'loan_fundings', loanId);
+      if (!funding.isWallet && _final.contains(e.reason)) return _keepInWallet(uid, funding, loan0.currency, amount, 'loan_fundings', loanId, _regionOf(loan0));
       rethrow;
     }
   });
@@ -230,7 +243,7 @@ abstract final class FinanceLendingService {
   static Future<Map<String, dynamic>> _fund(String uid, Loan loan0, int amount, FinanceFunding funding, String requestKey, Future<Map<String, dynamic>?> Function() done) async {
     final String loanId = loan0.id;
     if (await _restricted()) throw const FinanceException('finance_restricted');
-    final cfg = await config();
+    final cfg = await config(regionId: _regionOf(loan0));
     if (cfg == null) throw const FinanceException('state_changed');
     final wallet = await FinanceLedger.wallet(uid, loan0.currency, db: _db);
     if (funding.isWallet && !wallet.exists) throw const FinanceException('insufficient_funds');
@@ -258,7 +271,7 @@ abstract final class FinanceLendingService {
           loanAccountExists: loan.fundedAmount > 0,
           agreement: last ? LoanPlans.agreement(loan, cfg, now) : null,
         );
-        _write(tx, posting.writes);
+        _write(tx, FinanceRegion.stamp(posting.writes, _regionOf(loan)));
         return (loan: loan, posting: posting, last: last);
       });
     } on FirebaseException catch (e) {
@@ -290,7 +303,7 @@ abstract final class FinanceLendingService {
       final String? problem = LoanChecks.accept(loan, uid, agreement, version, restricted: false, loanBalance: loan.fundedAmount);
       if (problem != null) throw FinanceException(problem);
       final posting = LoanPlans.accept(loan: loan, agreement: agreement!, uid: uid, walletId: wallet.id, walletExists: wallet.exists, now: DateTime.now());
-      _write(tx, posting.writes);
+      _write(tx, FinanceRegion.stamp(posting.writes, _regionOf(loan)));
       return loan;
     });
     if (r != null) unawaited(_notify('loan_disbursed', r.lenderIds, r, {'amount': FinanceMoney.format(r.fundedAmount, r.currency)}, except: uid));
@@ -315,7 +328,7 @@ abstract final class FinanceLendingService {
     } on FinanceException catch (e) {
       // A gateway payment already taken is never lost: when the loan
       // can no longer take it, it goes to the user's wallet.
-      if (!funding.isWallet && _final.contains(e.reason)) return _keepInWallet(uid, funding, loan0.currency, amount, 'loan_repayments', loanId);
+      if (!funding.isWallet && _final.contains(e.reason)) return _keepInWallet(uid, funding, loan0.currency, amount, 'loan_repayments', loanId, _regionOf(loan0));
       rethrow;
     }
   });
@@ -334,7 +347,7 @@ abstract final class FinanceLendingService {
         final String? problem = LoanChecks.repay(loan, uid, amount, walletBalance: balance);
         if (problem != null) throw FinanceException(problem);
         final posting = LoanPlans.repay(loan: loan, uid: uid, amount: amount, requestKey: requestKey, funding: funding, walletId: wallet.id, installments: installments);
-        _write(tx, posting.writes);
+        _write(tx, FinanceRegion.stamp(posting.writes, _regionOf(loan)));
         return (loan: loan, posting: posting);
       });
     } on FirebaseException catch (e) {
@@ -354,22 +367,24 @@ abstract final class FinanceLendingService {
 
   /// The gateway payment [funding] the loan could not take, deposited into
   /// the user's wallet (once per gateway payment: `wallet_operations/{receiptId}`).
-  static Future<Map<String, dynamic>> _keepInWallet(String uid, FinanceFunding funding, String currency, int amount, String purposeKind, String purposeId) async {
+  static Future<Map<String, dynamic>> _keepInWallet(String uid, FinanceFunding funding, String currency, int amount, String purposeKind, String purposeId, String? regionId) async {
     final String? id = funding.receiptId;
     if (id == null) throw const FinanceException('state_changed');
     String reference = (await _existing('wallet_operations/$id'))?['reference']?.toString() ?? '';
     if (reference.isEmpty) {
       final wallet = await FinanceLedger.wallet(uid, currency, db: _db);
-      final writes = FinancePay.gatewayDeposit(
-        uid: uid,
-        currency: currency,
-        walletId: wallet.id,
-        walletExists: wallet.exists,
-        amount: amount,
-        funding: funding,
-        purposeKind: purposeKind,
-        purposeId: purposeId,
-      );
+      final writes = FinanceRegion.stamp(
+          FinancePay.gatewayDeposit(
+            uid: uid,
+            currency: currency,
+            walletId: wallet.id,
+            walletExists: wallet.exists,
+            amount: amount,
+            funding: funding,
+            purposeKind: purposeKind,
+            purposeId: purposeId,
+          ),
+          regionId);
       await _commit(writes);
       reference = writes.first.data['reference']?.toString() ?? '';
     }
@@ -397,7 +412,7 @@ abstract final class FinanceLendingService {
         final int due = LenderShare.due(repaid: loan.repaidAmount, lent: _int(funding['amount']), loanAmount: loan.amount, collected: _int(funding['collected']));
         if (due <= 0) return null;
         final posting = LoanPlans.collect(loan: loan, funding: funding, uid: uid, amount: due, walletId: wallet.id, walletExists: walletExists);
-        _write(tx, posting.writes);
+        _write(tx, FinanceRegion.stamp(posting.writes, _regionOf(loan)));
         return (due, posting.reference);
       });
       if (r != null) {

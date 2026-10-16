@@ -112,7 +112,7 @@ class CardFace extends StatelessWidget {
   }
 }
 
-/// Spideli Finance > Virtual cards. `platform_settings/cards` must exist (admin).
+/// Spideli Finance > Virtual cards. `finance_settings/{regionId}_cards` must exist (admin).
 class CardsScreen extends StatelessWidget {
   const CardsScreen({super.key});
 

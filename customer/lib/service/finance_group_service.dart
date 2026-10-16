@@ -4,10 +4,12 @@ import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:customer/constant/constant.dart';
 import 'package:customer/service/finance_ledger.dart';
+import 'package:customer/service/finance_region_service.dart';
 import 'package:customer/service/finance_service.dart';
 import 'package:customer/service/push_message.dart';
 import 'package:customer/service/send_notification.dart';
 import 'package:customer/utils/finance_group_rules.dart';
+import 'package:customer/utils/finance_region_rules.dart';
 import 'package:customer/utils/finance_security_rules.dart';
 import 'package:customer/utils/finance_rules.dart';
 import 'package:intl/intl.dart' show DateFormat;
@@ -113,9 +115,17 @@ abstract final class FinanceGroupService {
 
   // ── Configuration ─────────────────────────────────────────────────────
 
-  static Future<SavingsConfig?> savingsConfig() async => SavingsConfig.parse((await _db.collection('platform_settings').doc('savings').get()).data());
+  /// The savings settings of [regionId] (a goal's own region), else of the
+  /// customer's Finance region (`finance_settings/{regionId}_savings`).
+  static Future<SavingsConfig?> savingsConfig({String? regionId}) async => SavingsConfig.parse(await FinanceRegion.settings(FinanceModules.savings, regionId: regionId));
 
-  static Future<TontineConfig?> tontineConfig() async => TontineConfig.parse((await _db.collection('platform_settings').doc('tontines').get()).data());
+  /// The tontine settings of [regionId] (a tontine's own region), else of
+  /// the customer's Finance region (`finance_settings/{regionId}_tontines`).
+  static Future<TontineConfig?> tontineConfig({String? regionId}) async => TontineConfig.parse(await FinanceRegion.settings(FinanceModules.tontines, regionId: regionId));
+
+  /// The region of a stored goal or tontine (its own), else the customer's:
+  /// its postings carry it.
+  static String? _regionOf(String regionId) => regionId.isNotEmpty ? regionId : FinanceRegion.currentId;
 
   // ── Savings goals ─────────────────────────────────────────────────────
 
@@ -179,7 +189,8 @@ abstract final class FinanceGroupService {
         // An "all services" restriction (or one naming savings) stops new
         // goals; money already saved stays the user's to add to or withdraw.
         if (FinanceRestriction.blocks(await _me(), 'savings')) throw const FinanceException('finance_restricted');
-        final cfg = await savingsConfig();
+        final String regionId = await FinanceRegion.require();
+        final cfg = await savingsConfig(regionId: regionId);
         if (cfg == null || !cfg.purposes.contains(purpose) || !cfg.currencies.contains(currency)) throw const FinanceException('invalid_state');
         if (targetAmount <= 0 || (scheduleAmount ?? 0) < 0) throw const FinanceException('amount_out_of_range');
         final emails = inviteEmails.map((e) => e.trim().toLowerCase()).where((e) => e.isNotEmpty).toSet().toList();
@@ -196,7 +207,7 @@ abstract final class FinanceGroupService {
           final String goalId = key;
           final existing = await _existing('savings_goals/$goalId');
           if (existing != null && existing['ownerId'] == uid) return goalId;
-          await _commit(SavingsWrites.create(
+          await _commit(FinanceRegion.stamp(SavingsWrites.create(
             goalId: goalId,
             uid: uid,
             name: name,
@@ -208,7 +219,7 @@ abstract final class FinanceGroupService {
             frequency: frequency,
             scheduleAmount: scheduleAmount,
             invitedIds: [for (final p in invitees) p.uid],
-          ));
+          ), regionId));
           FinancePeople.push('savings_invite', [for (final p in invitees) p.uid], {'goalId': goalId}, {'goalName': name, 'inviterName': _myName});
           return goalId;
         });
@@ -228,9 +239,9 @@ abstract final class FinanceGroupService {
   /// The owner invites the Spideli account of [email] (`invitedIds`).
   static Future<void> inviteToGoal(String goalId, String email) => _write(() async {
         final String uid = _signedIn();
-        final cfg = await savingsConfig();
-        if (cfg == null) throw const FinanceException('invalid_state');
         final g = await _goalNow(goalId);
+        final cfg = await savingsConfig(regionId: _regionOf(g.regionId));
+        if (cfg == null) throw const FinanceException('invalid_state');
         final p = await FinancePeople.byEmail(email);
         if (p == null) throw FinanceException('recipient_not_found', {'email': email});
         final String? blocker = SavingsWrites.inviteBlocker(g, cfg, uid, p.uid);
@@ -246,7 +257,7 @@ abstract final class FinanceGroupService {
         final g = await _goalNow(goalId);
         // Already answered (a retry after a lost answer).
         if (!g.invitedIds.contains(uid) && g.memberIds.contains(uid) == accept) return;
-        final String? blocker = SavingsWrites.respondBlocker(g, accept ? await savingsConfig() : null, uid, accept);
+        final String? blocker = SavingsWrites.respondBlocker(g, accept ? await savingsConfig(regionId: _regionOf(g.regionId)) : null, uid, accept);
         if (blocker != null) throw FinanceException(blocker);
         await _commit(SavingsWrites.respond(goalId, uid, accept));
       });
@@ -273,7 +284,7 @@ abstract final class FinanceGroupService {
             walletId = w.id;
           }
           final p = SavingsWrites.contribute(goal: g, contributionId: key, uid: uid, amount: amount, walletId: walletId, funding: funding);
-          await _commit(p.writes);
+          await _commit(FinanceRegion.stamp(p.writes, _regionOf(g.regionId)));
           return {'status': 'succeeded', 'reference': p.reference};
         }),
       );
@@ -288,11 +299,11 @@ abstract final class FinanceGroupService {
           final done = await _existing('savings_withdrawals/$key');
           if (done != null) return {'status': done['status'], 'reference': done['reference']};
           final g = await _goalNow(goalId);
-          final String? blocker = SavingsWrites.withdrawBlocker(g, await savingsConfig(), uid, amount);
+          final String? blocker = SavingsWrites.withdrawBlocker(g, await savingsConfig(regionId: _regionOf(g.regionId)), uid, amount);
           if (blocker != null) throw FinanceException(blocker);
           final w = await FinanceLedger.wallet(uid, g.currency, db: _db);
           final p = SavingsWrites.withdraw(goal: g, withdrawalId: key, uid: uid, amount: amount, walletId: w.id, walletExists: w.exists, reason: reason ?? '');
-          await _commit(p.writes);
+          await _commit(FinanceRegion.stamp(p.writes, _regionOf(g.regionId)));
           return {'status': g.isSolo ? 'completed' : 'requested', 'reference': p.reference};
         }),
       );
@@ -308,7 +319,7 @@ abstract final class FinanceGroupService {
         final String? blocker = SavingsWrites.cancelBlocker(g, uid);
         if (blocker != null) throw FinanceException(blocker);
         final w = await FinanceLedger.wallet(uid, g.currency, db: _db);
-        await _commit(SavingsWrites.cancel(goal: g, uid: uid, walletId: w.id, walletExists: w.exists).writes);
+        await _commit(FinanceRegion.stamp(SavingsWrites.cancel(goal: g, uid: uid, walletId: w.id, walletExists: w.exists).writes, _regionOf(g.regionId)));
         return g.isSolo ? 'cancelled' : 'cancellation_requested';
       });
 
@@ -400,7 +411,8 @@ abstract final class FinanceGroupService {
         final String uid = _signedIn();
         final String? restricted = TontineWrites.restrictionBlocker(await _me());
         if (restricted != null) throw FinanceException(restricted);
-        final cfg = await tontineConfig();
+        final String regionId = await FinanceRegion.require();
+        final cfg = await tontineConfig(regionId: regionId);
         if (cfg == null ||
             !cfg.currencies.contains(currency) ||
             !cfg.frequencies.contains(frequency) ||
@@ -414,7 +426,7 @@ abstract final class FinanceGroupService {
           final String tontineId = key;
           final existing = await _existing('tontines/$tontineId');
           if (existing != null && existing['createdBy'] == uid) return tontineId;
-          await _commit(TontineWrites.create(
+          await _commit(FinanceRegion.stamp(TontineWrites.create(
             tontineId: tontineId,
             uid: uid,
             displayName: _myName,
@@ -428,7 +440,7 @@ abstract final class FinanceGroupService {
             membersLimit: membersLimit,
             payoutOrderMethod: payoutOrderMethod,
             startDate: startDate,
-          ));
+          ), regionId));
           return tontineId;
         });
       });
@@ -485,9 +497,9 @@ abstract final class FinanceGroupService {
   /// then fixed.
   static Future<void> start(String tontineId) => _write(() async {
         final String uid = _signedIn();
-        final cfg = await tontineConfig();
-        if (cfg == null) throw const FinanceException('invalid_state');
         final t = await _tontineNow(tontineId);
+        final cfg = await tontineConfig(regionId: _regionOf(t.regionId));
+        if (cfg == null) throw const FinanceException('invalid_state');
         // Already started (a retry after a lost answer).
         if (t.isAdmin(uid) && t.isActive) return;
         final active = (await _membersNow(tontineId)).where((m) => m['status'] == 'active' && t.memberIds.contains(m['userId'])).toList();
@@ -533,7 +545,7 @@ abstract final class FinanceGroupService {
             final String? blocker = TontineWrites.contributeBlocker(t, cycle, uid);
             if (blocker != null) throw FinanceException(blocker);
             final p = TontineWrites.contribute(t: t, cycle: cycle, uid: uid, walletId: walletId, funding: funding);
-            _applyTx(tx, p.writes);
+            _applyTx(tx, FinanceRegion.stamp(p.writes, _regionOf(t.regionId)));
             final bool completes = p.writes.any((w) => w.path.startsWith('tontine_payouts/'));
             return (reference: p.reference, completes: completes, t: t, cycle: cycle);
           });
@@ -596,7 +608,7 @@ abstract final class FinanceGroupService {
             walletId: walletId,
             walletExists: walletExists,
           );
-          _applyTx(tx, p.writes);
+          _applyTx(tx, FinanceRegion.stamp(p.writes, _regionOf(t.regionId)));
           return (t: t, amount: FinanceSummary.intOf(payout['amount']));
         });
         FinancePeople.push('tontine_payout_paid', [beneficiary], {'tontineId': tontineId, 'payoutId': payoutId}, {

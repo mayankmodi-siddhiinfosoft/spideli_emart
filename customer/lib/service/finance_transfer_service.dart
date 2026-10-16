@@ -7,12 +7,14 @@ import 'package:customer/constant/constant.dart';
 import 'package:customer/service/finance_group_service.dart';
 import 'package:customer/service/finance_ledger.dart';
 import 'package:customer/service/finance_payment_service.dart';
+import 'package:customer/service/finance_region_service.dart';
 import 'package:customer/service/finance_service.dart';
 import 'package:customer/service/finance_wallet_service.dart';
 import 'package:customer/service/push_message.dart';
 import 'package:customer/service/send_notification.dart';
 import 'package:customer/utils/finance_payment_rules.dart';
 import 'package:customer/utils/finance_receipt_pdf.dart';
+import 'package:customer/utils/finance_region_rules.dart';
 import 'package:customer/utils/finance_rules.dart';
 import 'package:customer/utils/finance_transfer_rules.dart';
 import 'package:get/get.dart';
@@ -38,7 +40,9 @@ abstract final class FinanceTransferService {
 
   // ── Transfers ──────────────────────────────────────────────────────────
 
-  static Future<TransferConfig?> config() async => TransferConfig.parse((await _db.collection('platform_settings').doc('transfers').get()).data());
+  /// The transfer settings of the customer's Finance region
+  /// (`finance_settings/{regionId}_transfers`), or null.
+  static Future<TransferConfig?> config() async => TransferConfig.parse(await FinanceRegion.settings(FinanceModules.transfers));
 
   /// Transfers the user sent or received.
   static Stream<List<Map<String, dynamic>>> transfers() =>
@@ -110,13 +114,16 @@ abstract final class FinanceTransferService {
     if (d.internal && (d.recipientId ?? '').isEmpty) throw const FinanceException('recipient_not_found');
     if (d.recipientId == _uid) throw const FinanceException('self_transfer');
     if (funding.isWallet) await FinancePaymentService.requireAllowed('transfers');
+    final String regionId = await FinanceRegion.require();
     final String intent = 'transfer:${d.channel}:${d.recipientKey}:${d.currency}:${d.amount}:${funding.method}:${funding.reference ?? ''}';
     final String id = FinanceRequestKeys.of(intent);
     final String tx = FinancePaymentService.txIdOf(id);
     final String guard = 'money_transfers/$id';
     // A gateway payment lands in the sender's wallet first (once), then pays
     // like the wallet: if the transfer then fails, the money is in the wallet.
-    if (!funding.isWallet) await FinanceWalletService.depositGateway(funding: funding, currency: d.currency, amount: d.total, purposeKind: 'money_transfers', purposeId: id);
+    if (!funding.isWallet) {
+      await FinanceWalletService.depositGateway(funding: funding, currency: d.currency, amount: d.total, purposeKind: 'money_transfers', purposeId: id, regionId: regionId);
+    }
     final already = await FinancePaymentService.read(guard).catchError((_) => null);
     if (already != null && already['senderId'] == _uid) {
       FinanceRequestKeys.done(intent);
@@ -135,7 +142,7 @@ abstract final class FinanceTransferService {
       } catch (_) {
         exists = null;
       }
-      List<FinanceWrite> plan(bool walletExists) => TransferPlans.internal(
+      List<FinanceWrite> plan(bool walletExists) => FinanceRegion.stamp(TransferPlans.internal(
             id: id,
             d: d,
             senderId: _uid,
@@ -144,7 +151,7 @@ abstract final class FinanceTransferService {
             senderWalletId: walletId,
             recipientWallet: (id: recipientWallet, exists: walletExists),
             txId: tx,
-          );
+          ), regionId);
       writes = plan(exists ?? true);
       try {
         done = await FinancePaymentService.commit(writes, guard: guard, owner: 'senderId');
@@ -154,7 +161,7 @@ abstract final class FinanceTransferService {
         done = await FinancePaymentService.commit(writes, guard: guard, owner: 'senderId');
       }
     } else {
-      writes = TransferPlans.external(id: id, d: d, senderId: _uid, senderName: _senderName, funding: funding, senderWalletId: walletId, txId: tx);
+      writes = FinanceRegion.stamp(TransferPlans.external(id: id, d: d, senderId: _uid, senderName: _senderName, funding: funding, senderWalletId: walletId, txId: tx), regionId);
       done = await FinancePaymentService.commit(writes, guard: guard, owner: 'senderId');
     }
     FinanceRequestKeys.done(intent);
@@ -192,7 +199,9 @@ abstract final class FinanceTransferService {
 
   // ── Bills ──────────────────────────────────────────────────────────────
 
-  static Future<BillsConfig?> billsConfig() async => BillsConfig.parse((await _db.collection('platform_settings').doc('bills').get()).data());
+  /// The bill settings of the customer's Finance region
+  /// (`finance_settings/{regionId}_bills`), or null.
+  static Future<BillsConfig?> billsConfig() async => BillsConfig.parse(await FinanceRegion.settings(FinanceModules.bills));
 
   static Stream<List<Biller>> billers(String category) =>
       _db.collection('utility_billers').where('published', isEqualTo: true).where('category', isEqualTo: category).limit(100).snapshots().map((s) {
@@ -238,18 +247,21 @@ abstract final class FinanceTransferService {
     if (!b.accountValid(d.account) || BillPlans.amountProblem(b, d.amount) != null) throw const FinanceException('amount_out_of_range');
     if (!_fundingAllowed(config.paymentMethods, funding)) throw const FinanceException('gateway_unavailable');
     if (funding.isWallet) await FinancePaymentService.requireAllowed('payments');
+    final String regionId = await FinanceRegion.require();
     final String intent = 'bill:${b.id}:${d.account}:${d.package?.code ?? ''}:${d.amount}:${funding.method}:${funding.reference ?? ''}';
     final String id = FinanceRequestKeys.of(intent);
     final String guard = 'utility_payment_requests/$id';
     // A gateway payment lands in the wallet first (once), then pays like the wallet.
-    if (!funding.isWallet) await FinanceWalletService.depositGateway(funding: funding, currency: b.currency, amount: d.total, purposeKind: 'utility_payment_requests', purposeId: id);
+    if (!funding.isWallet) {
+      await FinanceWalletService.depositGateway(funding: funding, currency: b.currency, amount: d.total, purposeKind: 'utility_payment_requests', purposeId: id, regionId: regionId);
+    }
     final already = await FinancePaymentService.read(guard).catchError((_) => null);
     if (already != null && already['userId'] == _uid) {
       FinanceRequestKeys.done(intent);
       return {'status': 'processing', 'reference': already['reference'] ?? '', 'requestId': id};
     }
     final String walletId = (await FinancePaymentService.requireBalance(b.currency, d.total)).id;
-    final writes = BillPlans.payment(id: id, uid: _uid, d: d, funding: funding, walletId: walletId, txId: FinancePaymentService.txIdOf(id));
+    final writes = FinanceRegion.stamp(BillPlans.payment(id: id, uid: _uid, d: d, funding: funding, walletId: walletId, txId: FinancePaymentService.txIdOf(id)), regionId);
     final done = await FinancePaymentService.commit(writes, guard: guard);
     FinanceRequestKeys.done(intent);
     if (done == null && d.saveAccount) unawaited(_saveAccount(d));

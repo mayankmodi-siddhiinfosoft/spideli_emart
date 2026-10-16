@@ -149,7 +149,7 @@ class AiAssistantScreen extends StatelessWidget {
   }
 }
 
-/// Spideli Finance > Financial coach. `platform_settings/intelligence.coach` must be enabled (admin).
+/// Spideli Finance > Financial coach. `finance_settings/{regionId}_intelligence.coach` must be enabled (admin).
 class CoachScreen extends StatelessWidget {
   const CoachScreen({super.key});
 

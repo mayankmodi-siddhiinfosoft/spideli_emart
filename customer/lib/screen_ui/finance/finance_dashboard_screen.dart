@@ -5,6 +5,7 @@ import 'package:customer/screen_ui/finance/fin_ds.dart';
 import 'package:customer/screen_ui/finance/fin_kit.dart';
 import 'package:customer/screen_ui/finance/finance_home_screen.dart';
 import 'package:customer/screen_ui/finance/finance_profile_tab.dart';
+import 'package:customer/screen_ui/finance/finance_region_gate.dart';
 import 'package:customer/screen_ui/finance/insurance_screens.dart';
 import 'package:customer/screen_ui/finance/intelligence_screens.dart';
 import 'package:customer/screen_ui/finance/investment_screens.dart';
@@ -13,9 +14,12 @@ import 'package:customer/screen_ui/finance/savings_screens.dart';
 import 'package:customer/screen_ui/finance/tontine_screens.dart';
 import 'package:customer/screen_ui/finance/transactions_screen.dart';
 import 'package:customer/screen_ui/finance/transfer_screens.dart';
+import 'package:customer/service/finance_region_service.dart';
 import 'package:customer/service/finance_service.dart';
 import 'package:customer/themes/ds/ds.dart';
+import 'package:customer/utils/finance_region_rules.dart';
 import 'package:customer/utils/finance_rules.dart';
+import 'package:customer/utils/region_service.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
@@ -43,6 +47,10 @@ class FinanceDashboardController extends GetxController {
 /// Service (FinanceSection): Home, Wallet, Services, Insights and Profile in
 /// a bottom bar, in the Finance navy. A tab is built the first time it is
 /// opened and kept after; Back on another tab returns to Home first.
+///
+/// Only where the customer's region offers Finance (FinanceRegion; the
+/// admin's `regions.financeEnabled`), live: while it is open, the admin's
+/// changes to the region and its settings reach every screen.
 class FinanceDashboardScreen extends StatefulWidget {
   final FinanceTab initialTab;
 
@@ -60,6 +68,20 @@ class _FinanceDashboardScreenState extends State<FinanceDashboardScreen> {
   /// scroll controller would otherwise move them all together.
   final Map<FinanceTab, ScrollController> _scroll = {for (final t in FinanceTab.values) t: ScrollController()};
 
+  late Stream<FinanceRegionPick> _region = FinanceRegion.watch();
+
+  @override
+  void initState() {
+    super.initState();
+    FinanceRegion.retain();
+  }
+
+  /// Resolves the region again (the customer may have chosen a location).
+  Future<void> _retryRegion() async {
+    await RegionService.ensureCustomerCountry(force: true);
+    if (mounted) setState(() => _region = FinanceRegion.watch());
+  }
+
   static Widget _page(FinanceTab tab) => switch (tab) {
         FinanceTab.home => const FinanceHomeScreen(),
         FinanceTab.wallet => const TransactionsScreen(asTab: true),
@@ -74,6 +96,7 @@ class _FinanceDashboardScreenState extends State<FinanceDashboardScreen> {
       c.dispose();
     }
     Get.delete<FinanceDashboardController>();
+    FinanceRegion.release();
     super.dispose();
   }
 
@@ -82,7 +105,25 @@ class _FinanceDashboardScreenState extends State<FinanceDashboardScreen> {
     final bool dark = Theme.of(context).brightness == Brightness.dark;
     return DsAccentScope(
       color: dark ? FinColors.navyDark : FinColors.navy,
-      child: Obx(() {
+      child: StreamBuilder<FinanceRegionPick>(
+        stream: _region,
+        builder: (context, region) {
+          final pick = region.data;
+          if (pick == null) {
+            final Widget state = region.hasError
+                ? FinState.error("Could not load this service. Check your connection and try again.".tr, onRetry: _retryRegion)
+                : FinState.loading(rows: 4);
+            return FinScaffold(title: "Spideli Finance".tr, body: FinBody(children: [state]));
+          }
+          if (!pick.isReady) return FinanceRegionUnavailable(pick: pick, onRetry: _retryRegion);
+          return _tabs();
+        },
+      ),
+    );
+  }
+
+  /// The tabs, once the region offers Finance.
+  Widget _tabs() => Obx(() {
         final FinanceTab current = _controller.tab.value;
         _built.add(current);
         return PopScope(
@@ -101,9 +142,7 @@ class _FinanceDashboardScreenState extends State<FinanceDashboardScreen> {
             bottomNavigationBar: _FinanceNavBar(current: current, onSelect: (t) => _controller.tab.value = t),
           ),
         );
-      }),
-    );
-  }
+      });
 }
 
 /// The bottom bar: a hairline over a surface, the active tab in a soft navy

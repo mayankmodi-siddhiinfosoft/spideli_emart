@@ -70,7 +70,7 @@ class CoachConfig {
   const CoachConfig({required this.consentVersion, required this.consentText, required this.topics, required this.maxMessageLength});
 }
 
-/// The market parts of `platform_settings/intelligence.markets`
+/// The market parts of `finance_settings/{regionId}_intelligence.markets`
 /// (`{enabled, stocks, bonds, ipos, collections, news}`): each one offered
 /// only when `true` (the admin publishes its data from a licensed feed).
 class MarketsConfig {
@@ -93,7 +93,7 @@ class MarketsConfig {
   }
 }
 
-/// `platform_settings/intelligence` (admin). Each part is offered only when
+/// `finance_settings/{regionId}_intelligence` (admin). Each part is offered only when
 /// enabled and valid; null when nothing is.
 class IntelligenceConfig {
   final IndicatorsConfig? indicators;

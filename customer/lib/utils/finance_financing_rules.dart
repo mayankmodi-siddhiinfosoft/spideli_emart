@@ -35,7 +35,7 @@ class RequiredDocument {
   const RequiredDocument(this.type, this.financingTypes);
 }
 
-/// `platform_settings/financing` (admin). Null when missing or invalid.
+/// `finance_settings/{regionId}_financing` (admin). Null when missing or invalid.
 class FinancingConfig {
   final List<String> currencies;
   final List<String> financingTypes;

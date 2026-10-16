@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:developer';
 
+import 'package:customer/screen_ui/finance/finance_push_opener.dart';
 import 'package:customer/service/chat_sound.dart';
 import 'package:customer/firebase_options.dart';
 import 'package:customer/models/customer_notification_model.dart';
@@ -15,6 +16,7 @@ import 'package:customer/service/fire_store_utils.dart';
 import 'package:customer/service/push_message.dart';
 import 'package:customer/utils/customer_notification_record.dart';
 import 'package:customer/utils/delivery_code_push.dart';
+import 'package:customer/utils/finance_push_tap.dart';
 import 'package:customer/utils/on_demand_booking_opener.dart';
 import 'package:customer/utils/on_demand_push.dart';
 import 'package:customer/utils/order_notification_opener.dart';
@@ -240,6 +242,16 @@ class NotificationService {
         return;
       }
       if (FirebaseAuth.instance.currentUser == null) return;
+      // A Spideli Finance push opens its record's screen (FinancePushTap).
+      final finance = FinancePushTap.targetOf(data);
+      if (finance != null) {
+        if (coldStart && !_appReady) {
+          _pendingTap = data;
+          return;
+        }
+        await FinancePushOpener.open(finance);
+        return;
+      }
       final PushTapTarget? target = PushTap.targetOf(data);
       if (target == null) return;
       if (coldStart && !_appReady) {
@@ -279,7 +291,7 @@ class NotificationService {
   static Future<void> openNotification(CustomerNotificationModel notification) async {
     try {
       final Map<String, dynamic> data = notification.routeData;
-      if (PushTap.field(data, 'type') == DeliveryCodePush.type || PushTap.targetOf(data) != null) {
+      if (PushTap.field(data, 'type') == DeliveryCodePush.type || PushTap.targetOf(data) != null || FinancePushTap.targetOf(data) != null) {
         await routeTap(data);
         return;
       }

@@ -2,7 +2,7 @@
 /// (.claude/FINANCE-DIRECT-FIRESTORE.md section 3.2): deposit through a
 /// payment gateway, withdrawal to Mobile Money / Wave / a bank account
 /// (completed by the admin), conversion between the user's currencies.
-/// `platform_settings/wallet` parsing, fees and the write plans (one batch
+/// `finance_settings/{regionId}_wallet` parsing, fees and the write plans (one batch
 /// each). Unit tested in test/finance_wallet_test.dart.
 library;
 
@@ -83,7 +83,7 @@ class WalletConvertConfig {
   const WalletConvertConfig({required this.enabled, required this.currencies, required this.feePercent, this.maxRateAge = const Duration(hours: 48)});
 }
 
-/// `platform_settings/wallet` (admin). Null when missing or without a valid currency.
+/// `finance_settings/{regionId}_wallet` (admin). Null when missing or without a valid currency.
 class WalletConfig {
   final List<String> currencies;
   final WalletDepositConfig deposit;

@@ -121,7 +121,7 @@ class _ValueChange extends StatelessWidget {
 }
 
 /// Spideli Finance > Investments: portfolio, fund catalog and orders.
-/// `platform_settings/investments` must exist (admin).
+/// `finance_settings/{regionId}_investments` must exist (admin).
 class InvestmentsScreen extends StatefulWidget {
   const InvestmentsScreen({super.key});
 
@@ -484,7 +484,8 @@ class _CatalogState extends State<_Catalog> {
       builder: (context, snap) {
         if (snap.hasError) return FinState.error("Could not load the funds.".tr, onRetry: () => setState(() => _funds = FinanceInvestmentService.funds()));
         if (!snap.hasData) return FinState.loading();
-        final all = snap.data!;
+        // Only the funds in the region's currencies can be bought here.
+        final all = snap.data!.where((f) => widget.config.currencies.contains(f.currency)).toList();
         final classes = {...widget.config.assetClasses.where((c) => all.any((f) => f.assetClass == c)), ...all.map((f) => f.assetClass)}.toList();
         final String q = _search.text.trim().toLowerCase();
         final funds = all

@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
 """Seeds the Spideli Finance QA environment (local emulators only).
 
+Finance follows the region (APP-SPEC-FINANCE-REGION-SETTINGS): the sample
+customers are in the Douala zone, whose region `qa_douala` (XAF) has Finance
+switched on; its settings are `finance_settings/qa_douala_{module}`. The old
+`platform_settings/*` documents are written too, as on live, and the app no
+longer reads them.
+
 Run ./start.sh first, then:
 
     python3 seed.py            # reset the emulators and seed everything
@@ -110,6 +116,7 @@ def reset():
 
 # ---------------------------------------------------------------- people
 DOUALA = Geo(4.0483, 9.7043)  # Bonanjo, Douala
+REGION = 'qa_douala'  # Finance on, XAF
 PEOPLE = [
     # key, first, last, email, phone, kycLevel, opening XAF
     ('amina', 'Amina', 'Diallo', 'amina.diallo@spideli.test', '650000101', 'basic', 500000),
@@ -153,6 +160,8 @@ def seed_people():
             'isActive': True,
             'role': 'customer',
             'shippingAddress': [address],
+            # The region the customer uses Finance in (the app adds it on the first request too).
+            'regionIds': [REGION],
         }
         if kyc:
             doc.update({'kycLevel': kyc, 'kycStatus': 'approved'})
@@ -164,10 +173,13 @@ def seed_people():
 def seed_zone():
     zid = 'qa_douala'
     d = 0.35
+    put('currencies/qa_xaf', {'id': 'qa_xaf', 'code': 'XAF', 'name': 'Central African CFA franc', 'symbol': 'FCFA', 'decimal_degits': 0, 'isActive': False, 'symbolAtRight': True})
+    put(f'regions/{REGION}', {'id': REGION, 'name': 'Douala (QA)', 'code': 'CM', 'countryCode': 'CM', 'currencyId': 'qa_xaf', 'zoneIds': [zid], 'publish': True, 'financeEnabled': True})
     put(f'zone/{zid}', {
         'id': zid,
         'name': 'Douala',
         'publish': True,
+        'regionIds': [REGION],
         'latitude': DOUALA.lat,
         'longitude': DOUALA.lng,
         'area': [Geo(DOUALA.lat - d, DOUALA.lng - d), Geo(DOUALA.lat - d, DOUALA.lng + d), Geo(DOUALA.lat + d, DOUALA.lng + d), Geo(DOUALA.lat + d, DOUALA.lng - d)],
@@ -210,6 +222,8 @@ def seed_settings(settings):
     all_settings['cards'] = cards
     all_settings['wallet'] = WALLET
     for doc_id, data in all_settings.items():
+        # The region's settings, as the admin panel writes them (regionId, module, timestamps).
+        put(f'finance_settings/{REGION}_{doc_id}', {**data, 'regionId': REGION, 'module': doc_id, 'createdAt': NOW, 'updatedAt': NOW, 'updatedBy': 'admin:qa'})
         put(f'platform_settings/{doc_id}', {**data, 'createdAt': NOW})
 
 

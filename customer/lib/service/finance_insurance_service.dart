@@ -4,8 +4,10 @@ import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:customer/constant/constant.dart';
 import 'package:customer/service/finance_direct.dart';
 import 'package:customer/service/finance_ledger.dart';
+import 'package:customer/service/finance_region_service.dart';
 import 'package:customer/service/finance_service.dart';
 import 'package:customer/utils/finance_insurance_rules.dart';
+import 'package:customer/utils/finance_region_rules.dart';
 import 'package:customer/utils/finance_rules.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 
@@ -18,7 +20,9 @@ abstract final class FinanceInsuranceService {
   static FirebaseFirestore get _db => FirebaseFirestore.instance;
   static String get _uid => FinanceService.uid;
 
-  static Future<InsuranceConfig?> config() async => InsuranceConfig.parse((await _db.collection('platform_settings').doc('insurance').get()).data());
+  /// The insurance settings of the customer's Finance region
+  /// (`finance_settings/{regionId}_insurance`), or null.
+  static Future<InsuranceConfig?> config({String? regionId}) async => InsuranceConfig.parse(await FinanceRegion.settings(FinanceModules.insurance, regionId: regionId));
 
   /// The published catalog, in the admin's order.
   static Stream<List<InsuranceProduct>> products() => _db.collection('insurance_products').where('published', isEqualTo: true).limit(100).snapshots().map((s) {
@@ -72,6 +76,13 @@ abstract final class FinanceInsuranceService {
     await Constant().launchURL(Uri.parse(link));
   }
 
+  /// The region a payment for [record] is made in: the record's own, else
+  /// the customer's Finance region.
+  static Future<String> _regionOf(Map<String, dynamic> record) async {
+    final String own = (record['regionId'] ?? '').toString();
+    return own.isNotEmpty ? own : await FinanceRegion.require();
+  }
+
   /// The record at [path] when it is the user's, else [reason].
   static Future<Map<String, dynamic>> _owned(String path, String reason) async {
     final d = await FinanceDirect.get(path);
@@ -95,7 +106,11 @@ abstract final class FinanceInsuranceService {
     final InsuranceProduct? now = data == null ? null : InsuranceProduct.fromMap({...data, 'id': product.id});
     if (now == null || data!['published'] != true || !now.acceptsQuotes || !now.frequencies.containsKey(frequency)) throw const FinanceException('product_closed');
     if (now.factors.any((f) => f.multiplierFor(answers[f.key]) == null)) throw const FinanceException('not_eligible');
-    await FinanceDirect.commit(InsuranceWrites.requestQuote(id: requestKey, uid: _uid, product: now, answers: answers, frequency: frequency, coverStart: coverStart));
+    // The product's currency must be one of the region's (the rules check it too).
+    final String regionId = await FinanceRegion.require();
+    final cfg = await config(regionId: regionId);
+    if (cfg == null || !cfg.currencies.contains(now.currency)) throw const FinanceException('product_closed');
+    await FinanceDirect.commit(FinanceRegion.stamp(InsuranceWrites.requestQuote(id: requestKey, uid: _uid, product: now, answers: answers, frequency: frequency, coverStart: coverStart), regionId));
     return requestKey;
   }
 
@@ -135,6 +150,7 @@ abstract final class FinanceInsuranceService {
       sourceKind: 'insurance_premiums',
       sourceId: premiumId,
       description: 'Insurance premium: ${q['productName'] ?? ''}',
+      regionId: await _regionOf(q),
       existing: () async {
         final now = await FinanceDirect.get(path);
         if (now?['status'] != 'accepted') return null;
@@ -159,6 +175,7 @@ abstract final class FinanceInsuranceService {
       sourceKind: 'insurance_premiums',
       sourceId: premiumId,
       description: 'Insurance premium',
+      regionId: await _regionOf(pr),
       existing: () async {
         final now = await FinanceDirect.get(path);
         return now?['status'] == 'paid' ? now : null;
@@ -182,6 +199,7 @@ abstract final class FinanceInsuranceService {
       sourceKind: 'insurance_policies',
       sourceId: policyId,
       description: 'Insurance renewal: ${p['productName'] ?? ''}',
+      regionId: await _regionOf(p),
       existing: () async {
         final now = await FinanceDirect.get(path);
         return now?['renewalRequestedAt'] == null ? null : {'reference': now!['renewalReference'] ?? ''};

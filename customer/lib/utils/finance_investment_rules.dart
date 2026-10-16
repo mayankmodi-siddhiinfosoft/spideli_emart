@@ -27,7 +27,7 @@ List<String> _strings(dynamic v) => v is List ? v.map((e) => e.toString()).where
 
 Map<String, dynamic> _map(dynamic v) => v is Map ? Map<String, dynamic>.from(v) : const <String, dynamic>{};
 
-/// `platform_settings/investments` (admin). Null when missing or invalid.
+/// `finance_settings/{regionId}_investments` (admin). Null when missing or invalid.
 class InvestmentConfig {
   final List<String> currencies;
   final List<String> assetClasses;

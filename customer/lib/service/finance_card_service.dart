@@ -1,8 +1,10 @@
 import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:customer/service/finance_direct.dart';
 import 'package:customer/service/finance_ledger.dart';
+import 'package:customer/service/finance_region_service.dart';
 import 'package:customer/service/finance_service.dart';
 import 'package:customer/utils/finance_card_rules.dart';
+import 'package:customer/utils/finance_region_rules.dart';
 
 /// Virtual cards for the customer app (.claude/FINANCE-APP-CONTRACT.md
 /// section 14, .claude/FINANCE-DIRECT-FIRESTORE.md section 3.5). Reads the
@@ -13,7 +15,15 @@ abstract final class FinanceCardService {
   static FirebaseFirestore get _db => FirebaseFirestore.instance;
   static String get _uid => FinanceService.uid;
 
-  static Future<CardConfig?> config() async => CardConfig.parse((await _db.collection('platform_settings').doc('cards').get()).data());
+  /// The cards settings of [regionId] (a card's own region), else of the
+  /// customer's Finance region; null when cards are not offered there.
+  static Future<CardConfig?> config({String? regionId}) async => CardConfig.parse(await FinanceRegion.settings(FinanceModules.cards, regionId: regionId));
+
+  /// The settings a card follows: those of the region it was requested in.
+  static Future<CardConfig?> _configOf(VirtualCard card) => config(regionId: card.regionId.isEmpty ? null : card.regionId);
+
+  /// The region a card's requests are made in: its own.
+  static Future<String> _regionOf(VirtualCard card) async => card.regionId.isNotEmpty ? card.regionId : await FinanceRegion.require();
 
   static Stream<List<VirtualCard>> cards() => _db
       .collection('virtual_cards')
@@ -60,7 +70,8 @@ abstract final class FinanceCardService {
     required FinanceFunding funding,
     required String requestKey,
   }) async {
-    final cfg = await config();
+    final String regionId = await FinanceRegion.require();
+    final cfg = await config(regionId: regionId);
     if (cfg == null || !cfg.currencies.contains(currency)) throw const FinanceException('not_supported');
     if (cfg.termsVersion != termsVersion) throw const FinanceException('terms_outdated');
     final String path = 'virtual_cards/$requestKey';
@@ -87,7 +98,7 @@ abstract final class FinanceCardService {
           reference: FinanceLedger.newReference(),
         );
     if (fee <= 0) {
-      await FinanceDirect.commit(writes(null));
+      await FinanceDirect.commit(FinanceRegion.stamp(writes(null), regionId));
       return {'status': 'succeeded'};
     }
     return FinanceDirect.payPlatform(
@@ -100,6 +111,7 @@ abstract final class FinanceCardService {
       description: 'Card creation fee',
       existing: () => FinanceDirect.existing(path),
       writes: writes,
+      regionId: regionId,
     );
   }
 
@@ -107,9 +119,10 @@ abstract final class FinanceCardService {
   /// on top): `card_funding_requests/{requestKey}` `pending` with its posting
   /// to the platform. The admin loads the card. Idempotent on [requestKey].
   static Future<Map<String, dynamic>> fund(String cardId, int amount, FinanceFunding funding, String requestKey) async {
-    final cfg = await config();
-    if (cfg == null) throw const FinanceException('not_supported');
     final card = await _card(cardId, CardActions.canFund);
+    final cfg = await _configOf(card);
+    if (cfg == null) throw const FinanceException('not_supported');
+    final String regionId = await _regionOf(card);
     final int? min = cfg.minFunding[card.currency];
     final int? max = cfg.maxFunding[card.currency];
     if ((min != null && amount < min) || (max != null && amount > max)) throw const FinanceException('amount_out_of_range');
@@ -123,6 +136,7 @@ abstract final class FinanceCardService {
       sourceKind: 'card_funding_requests',
       sourceId: requestKey,
       description: 'Card top-up',
+      regionId: regionId,
       existing: () => FinanceDirect.existing(path),
       writes: (posting) => CardWrites.fund(
         requestId: requestKey,
@@ -152,20 +166,24 @@ abstract final class FinanceCardService {
   /// Asks for [amount] of the card balance back in the wallet (`withdraw`
   /// `pending`; the admin unloads the card and credits the wallet).
   static Future<void> withdraw(String cardId, int amount, String requestKey) async {
-    final cfg = await config();
+    final card0 = await _card(cardId, (_) => true);
+    final cfg = await _configOf(card0);
     if (cfg == null || !cfg.canWithdraw) throw const FinanceException('not_supported');
     final card = await _card(cardId, (c) => CardActions.canWithdraw(c, cfg));
+    final String regionId = await _regionOf(card);
     final String path = 'card_funding_requests/$requestKey';
     if (await FinanceDirect.existing(path) != null) return;
     if (amount <= 0 || amount > await _available(card)) throw const FinanceException('insufficient_funds');
-    await FinanceDirect.commit(CardWrites.withdraw(
-      requestId: requestKey,
-      uid: _uid,
-      cardId: cardId,
-      currency: card.currency,
-      amount: amount,
-      reference: FinanceLedger.newReference(),
-    ));
+    await FinanceDirect.commit(FinanceRegion.stamp(
+        CardWrites.withdraw(
+          requestId: requestKey,
+          uid: _uid,
+          cardId: cardId,
+          currency: card.currency,
+          amount: amount,
+          reference: FinanceLedger.newReference(),
+        ),
+        regionId));
   }
 
   /// The Spideli user with the e-mail or phone number [contact]:
@@ -189,14 +207,16 @@ abstract final class FinanceCardService {
   /// Sends [amount] of the card balance to the card of [recipientId]
   /// (`transfer` `pending`; the admin moves it at the issuer).
   static Future<void> transfer(String cardId, int amount, {required String recipientId, required String recipientName, required String contact, required String requestKey}) async {
-    final cfg = await config();
+    final card0 = await _card(cardId, (_) => true);
+    final cfg = await _configOf(card0);
     if (cfg == null || !cfg.canTransfer) throw const FinanceException('not_supported');
     final card = await _card(cardId, (c) => CardActions.canTransfer(c, cfg));
+    final String regionId = await _regionOf(card);
     if (recipientId == _uid) throw const FinanceException('self_transfer');
     final String path = 'card_funding_requests/$requestKey';
     if (await FinanceDirect.existing(path) != null) return;
     if (amount <= 0 || amount > await _available(card)) throw const FinanceException('insufficient_funds');
-    await FinanceDirect.commit(CardWrites.transfer(
+    await FinanceDirect.commit(FinanceRegion.stamp(CardWrites.transfer(
       requestId: requestKey,
       uid: _uid,
       cardId: cardId,
@@ -206,7 +226,7 @@ abstract final class FinanceCardService {
       recipientName: recipientName,
       recipientContact: contact.trim(),
       reference: FinanceLedger.newReference(),
-    ));
+    ), regionId));
   }
 
   static Future<void> freeze(String cardId) async {
@@ -240,7 +260,7 @@ abstract final class FinanceCardService {
   /// Asks for the renewal of [cardId], paying the renewal fee with
   /// [funding] when there is one. Idempotent: a card already asked for is done.
   static Future<Map<String, dynamic>> renew(String cardId, FinanceFunding funding) async {
-    final cfg = await config();
+    final cfg = await _configOf(await _card(cardId, (_) => true));
     if (cfg == null || !cfg.canRenew) throw const FinanceException('not_supported');
     final String path = 'virtual_cards/$cardId';
     Future<Map<String, dynamic>?> requested() async {
@@ -263,6 +283,7 @@ abstract final class FinanceCardService {
       sourceKind: 'virtual_cards',
       sourceId: cardId,
       description: 'Card renewal fee',
+      regionId: await _regionOf(card),
       existing: requested,
       writes: (posting) => CardWrites.renew(cardId: cardId, fee: fee, feePosting: posting, paidWith: funding.toMap()),
     );

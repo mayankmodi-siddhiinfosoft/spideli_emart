@@ -5,7 +5,7 @@
 import { describe, it, beforeEach } from 'node:test';
 import {
   setUp, as, stale, ALICE, BOB, CAROL, MALLORY, plan, batchOf, create, update, merge, read, newKey, walletId, platformId,
-  SERVER_TIME, seed, union, later, day, DELETE, inc,
+  SERVER_TIME, seed, union, later, day, DELETE, inc, REGION,
 } from '../lib/fixtures.js';
 import { allowed, denied, assert } from '../lib/expect.js';
 
@@ -78,7 +78,7 @@ describe('cards, insurance, investments, financing, KYC housekeeping', () => {
       'financing_projects/pr': { id: 'pr', ownerId: ALICE, name: 'Shop', sector: 'commerce', country: 'CM', city: 'D', description: 'x', stage: 'startup', website: 'https://x.test' },
       'financing_applications/fa': { id: 'fa', ownerId: ALICE, projectId: 'pr', financingType: 'loan', amount: 1000000, currency: 'XAF', useOfFunds: 'x', status: 'additional_info_required' },
       'financing_documents/fd': { id: 'fd', ownerId: ALICE, applicationId: 'fa', type: 'business_plan', status: 'received' },
-      'platform_settings/financing': { currencies: ['XAF'], financingTypes: ['loan', 'equity'], sectors: ['commerce'], stages: ['startup'], documentTypes: ['business_plan'], minAmount: { XAF: 500000 }, maxAmount: { XAF: 50000000 }, durationsMonths: [12] },
+      [`finance_settings/${REGION}_financing`]: { currencies: ['XAF'], financingTypes: ['loan', 'equity'], sectors: ['commerce'], stages: ['startup'], documentTypes: ['business_plan'], minAmount: { XAF: 500000 }, maxAmount: { XAF: 50000000 }, durationsMonths: [12] },
       'kyc_applications/k1': { id: 'k1', userId: ALICE, level: 'basic', accountType: 'individual', status: 'draft', revision: 1 },
       'kyc_documents/k1_national_id_front_1': { id: 'k1_national_id_front_1', applicationId: 'k1', userId: ALICE, type: 'national_id', side: 'front', status: 'uploaded' },
     });

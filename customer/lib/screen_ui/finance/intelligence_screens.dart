@@ -189,7 +189,7 @@ abstract final class IntelLabels {
 /// Spideli Finance > Economic intelligence: indicators, exchange rates,
 /// markets (stocks and market indices, bonds, IPOs, stock collections,
 /// news and analyses) and investment opportunities.
-/// `platform_settings/intelligence` must exist (admin).
+/// `finance_settings/{regionId}_intelligence` must exist (admin).
 /// What [IntelligenceScreen] shows: everything, the markets (indicators,
 /// exchange rates and market data, under Investment) or the projects open
 /// to investors (funding, under Investment).

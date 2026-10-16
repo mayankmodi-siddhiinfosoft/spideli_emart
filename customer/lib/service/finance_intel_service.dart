@@ -4,8 +4,10 @@ import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:customer/constant/constant.dart';
 import 'package:customer/service/finance_group_service.dart';
 import 'package:customer/service/finance_ledger.dart';
+import 'package:customer/service/finance_region_service.dart';
 import 'package:customer/service/finance_service.dart';
 import 'package:customer/utils/finance_intel_rules.dart';
+import 'package:customer/utils/finance_region_rules.dart';
 
 /// Economic intelligence, markets, investor matching and the AI coach for
 /// the customer app (.claude/FINANCE-APP-CONTRACT.md section 17,
@@ -21,7 +23,9 @@ abstract final class FinanceIntelService {
   static String get _uid => FinanceService.uid;
   static DateTime? Function(dynamic) get _toDate => FinanceGroupService.toDate;
 
-  static Future<IntelligenceConfig?> config() async => IntelligenceConfig.parse((await _db.collection('platform_settings').doc('intelligence').get()).data());
+  /// The intelligence settings of the customer's Finance region
+  /// (`finance_settings/{regionId}_intelligence`), or null.
+  static Future<IntelligenceConfig?> config() async => IntelligenceConfig.parse(await FinanceRegion.settings(FinanceModules.intelligence));
 
   // ── Indicators and exchange rates ──────────────────────────────────────
 

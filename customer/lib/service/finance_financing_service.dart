@@ -4,8 +4,10 @@ import 'dart:typed_data';
 import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:customer/constant/constant.dart';
 import 'package:customer/service/finance_ledger.dart';
+import 'package:customer/service/finance_region_service.dart';
 import 'package:customer/service/finance_service.dart';
 import 'package:customer/utils/finance_financing_rules.dart';
+import 'package:customer/utils/finance_region_rules.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 
 /// Project financing for the customer app (.claude/FINANCE-DIRECT-FIRESTORE.md
@@ -25,7 +27,9 @@ abstract final class FinanceFinancingService {
   static Stream<Map<String, dynamic>?> _doc(String collection, String id) =>
       _db.collection(collection).doc(id).snapshots().map((s) => s.data() == null ? null : {...s.data()!, 'id': s.id});
 
-  static Future<FinancingConfig?> config() async => FinancingConfig.parse((await _db.collection('platform_settings').doc('financing').get()).data());
+  /// The financing settings of the customer's Finance region
+  /// (`finance_settings/{regionId}_financing`), or null.
+  static Future<FinancingConfig?> config({String? regionId}) async => FinancingConfig.parse(await FinanceRegion.settings(FinanceModules.financing, regionId: regionId));
 
   static Stream<List<Map<String, dynamic>>> projects() => _list(_db.collection('financing_projects').where('ownerId', isEqualTo: _uid).orderBy('createdAt', descending: true).limit(20));
 
@@ -68,7 +72,9 @@ abstract final class FinanceFinancingService {
         final String uid = _signedIn();
         // A new project already written by a first attempt is edited instead.
         final bool exists = isNew && await _existing('financing_projects/$projectId') != null;
-        await _commit(FinancingPlans.saveProject(projectId: projectId, uid: uid, isNew: isNew && !exists, fields: fields));
+        // A new project is made in the customer's Finance region (its sectors and stages).
+        final String? regionId = isNew && !exists ? await FinanceRegion.require() : null;
+        await _commit(FinanceRegion.stamp(FinancingPlans.saveProject(projectId: projectId, uid: uid, isNew: isNew && !exists, fields: fields), regionId));
       });
 
   /// Creates the draft [applicationId] for the owner's project `projectId`
@@ -79,13 +85,14 @@ abstract final class FinanceFinancingService {
         final String projectId = fields['projectId'].toString();
         final project = (await _db.collection('financing_projects').doc(projectId).get()).data();
         if (project == null || project['ownerId'] != uid) throw const FinanceException('permission_denied');
-        await _commit(FinancingPlans.createApplication(
+        final String regionId = await FinanceRegion.require();
+        await _commit(FinanceRegion.stamp(FinancingPlans.createApplication(
           applicationId: applicationId,
           uid: uid,
           projectId: projectId,
           projectName: project['name']?.toString() ?? '',
           fields: fields,
-        ));
+        ), regionId));
       });
 
   static Future<Map<String, dynamic>> _application(String applicationId) async {

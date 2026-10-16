@@ -304,7 +304,7 @@ class _PhotoPicker extends StatelessWidget {
 }
 
 /// Spideli Finance > Insurance: policies, quotes, claims and the catalog.
-/// `platform_settings/insurance` must exist (admin).
+/// `finance_settings/{regionId}_insurance` must exist (admin).
 class InsuranceScreen extends StatefulWidget {
   /// The tab it opens on: 0 my policies, 1 quotes, 2 claims, 3 insurance offers.
   final int initialTab;
@@ -459,7 +459,8 @@ class _CatalogState extends State<_Catalog> {
       builder: (context, snap) {
         if (snap.hasError) return FinState.error("Could not load the insurance offers.".tr, onRetry: () => setState(() => _products = FinanceInsuranceService.products()));
         if (!snap.hasData) return FinState.loading();
-        final all = snap.data!;
+        // Only the offers in the region's currencies can be taken here.
+        final all = snap.data!.where((p) => widget.config.currencies.contains(p.currency)).toList();
         final categories = widget.config.categories.where((c) => all.any((p) => p.category == c)).toList();
         final list = all.where((p) => _category == null || p.category == _category).toList();
         return Column(

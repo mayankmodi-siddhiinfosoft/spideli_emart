@@ -7,6 +7,7 @@ import 'package:customer/screen_ui/finance/finance_ui.dart';
 import 'package:customer/screen_ui/finance/transfer_screens.dart';
 import 'package:customer/screen_ui/finance/wallet_screens.dart';
 import 'package:customer/service/finance_group_service.dart';
+import 'package:customer/service/finance_region_service.dart';
 import 'package:customer/service/finance_service.dart';
 import 'package:customer/service/finance_wallet_service.dart';
 import 'package:customer/themes/ds/ds.dart';
@@ -29,7 +30,7 @@ Map<String, dynamic>? preferredWallet(List<Map<String, dynamic>> wallets, String
 
 /// Spideli Finance > Wallet: the available balance, wallet actions (add
 /// money, withdraw, convert when the admin offers them in
-/// `platform_settings/wallet`, send, pay bills, statement), the operations
+/// `finance_settings/{regionId}_wallet`, send, pay bills, statement), the operations
 /// in progress and the searchable, filterable history of ledger
 /// transactions (server-side filters, indexed; the search looks through the
 /// latest pages and can go further back on request).
@@ -48,7 +49,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
   final _search = TextEditingController();
 
   /// What the admin offers for the wallet (null: none of its own actions yet).
-  late final Future<WalletConfig?> _walletConfig = FinanceWalletService.config().catchError((_) => null);
+  late final Stream<WalletConfig?> _walletConfig = FinanceRegion.live(() => FinanceWalletService.config().catchError((_) => null));
   Timer? _debounce;
 
   /// The search applied to the list, a moment after the typing stops.
@@ -95,8 +96,8 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
         children: [
           StreamBuilder<FinanceSummary?>(
             stream: FinanceService.summary(),
-            builder: (context, summary) => FutureBuilder<WalletConfig?>(
-              future: _walletConfig,
+            builder: (context, summary) => StreamBuilder<WalletConfig?>(
+              stream: _walletConfig,
               builder: (context, cfgSnap) => StreamBuilder<List<Map<String, dynamic>>>(
                 stream: FinanceService.myAccounts(),
                 builder: (context, snap) {

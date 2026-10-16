@@ -5,8 +5,10 @@ import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:customer/constant/constant.dart';
 import 'package:customer/service/finance_ledger.dart';
+import 'package:customer/service/finance_region_service.dart';
 import 'package:customer/service/finance_summary_service.dart';
 import 'package:customer/utils/finance_kyc_rules.dart';
+import 'package:customer/utils/finance_region_rules.dart';
 import 'package:customer/utils/finance_rules.dart';
 import 'package:customer/utils/finance_statement_pdf.dart';
 import 'package:customer/utils/shared_latest.dart';
@@ -57,11 +59,10 @@ abstract final class FinanceService {
 
   // ── KYC ───────────────────────────────────────────────────────────────
 
-  /// `platform_settings/kyc`, or null when not configured.
-  static Future<KycSettings?> kycSettings() async {
-    final snap = await _db.collection('platform_settings').doc('kyc').get();
-    return KycSettings.parse(snap.data());
-  }
+  /// The KYC settings of [regionId] (an application's own region), else of
+  /// the customer's Finance region (`finance_settings/{regionId}_kyc`), or
+  /// null when not configured.
+  static Future<KycSettings?> kycSettings({String? regionId}) async => KycSettings.parse(await FinanceRegion.settings(FinanceModules.kyc, regionId: regionId));
 
   /// The user's profile (users/{uid}) with `kycStatus` set to the status of
   /// the latest verification application (.claude/FINANCE-DIRECT-FIRESTORE.md
@@ -142,7 +143,8 @@ abstract final class FinanceService {
   /// time: a retry after a lost answer finds the one it created.
   static Future<String> createApplication({required String level, required String accountType}) => _kycWrite(() async {
         final String uid = _signedIn();
-        final settings = await kycSettings();
+        final String regionId = await FinanceRegion.require();
+        final settings = await kycSettings(regionId: regionId);
         if (settings == null) throw const FinanceException('kyc_not_configured');
         final apps = await _db.collection('kyc_applications').where('userId', isEqualTo: uid).get();
         final same = apps.docs.where((d) => d.data()['level'] == level && d.data()['accountType'] == accountType && KycStatus.isOpen(d.data()['status']?.toString()));
@@ -150,7 +152,7 @@ abstract final class FinanceService {
         final String? blocker = KycWrites.createBlocker([for (final d in apps.docs) d.data()], settings, level, accountType);
         if (blocker != null) throw FinanceException(blocker);
         final String id = _db.collection('kyc_applications').doc().id;
-        await _kycCommit(KycWrites.create(applicationId: id, uid: uid, level: level, accountType: accountType));
+        await _kycCommit(FinanceRegion.stamp(KycWrites.create(applicationId: id, uid: uid, level: level, accountType: accountType), regionId));
         return id;
       });
 
@@ -169,7 +171,7 @@ abstract final class FinanceService {
         final String uid = _signedIn();
         final app = await _kycApplication(applicationId);
         if (!KycStatus.ownerMayEdit(app['status']?.toString())) throw const FinanceException('kyc_not_editable');
-        final settings = await kycSettings();
+        final settings = await kycSettings(regionId: await FinanceRegion.regionOf(app));
         if (settings == null) throw const FinanceException('kyc_not_configured');
         if (!(settings.documentSides[type] ?? const <String>[]).contains(side)) throw const FinanceException('kyc_invalid_transition');
         const String contentType = 'image/jpeg';
@@ -206,7 +208,7 @@ abstract final class FinanceService {
         final app = await _kycApplication(applicationId);
         // Already sent (a retry after a lost answer).
         if (app['status'] == KycStatus.submitted) return;
-        final settings = await kycSettings();
+        final settings = await kycSettings(regionId: await FinanceRegion.regionOf(app));
         if (settings == null) throw const FinanceException('kyc_not_configured');
         final docs = await _db.collection('kyc_documents').where('applicationId', isEqualTo: applicationId).where('userId', isEqualTo: uid).get();
         final refs = [for (final d in docs.docs) KycDocumentRef('${d.data()['type']}', '${d.data()['side']}', '${d.data()['status']}')];

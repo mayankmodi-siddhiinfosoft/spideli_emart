@@ -117,7 +117,7 @@ abstract final class KycStatus {
   static bool isOpen(String? status) => status != approved && status != rejected;
 }
 
-/// KYC requirements from `platform_settings/kyc` (server `parseKycConfig`).
+/// KYC requirements from `finance_settings/{regionId}_kyc` (server `parseKycConfig`).
 class KycSettings {
   final Map<String, List<String>> documentSides;
   final Map<String, KycLevel> levels;
@@ -231,6 +231,7 @@ abstract final class FinanceErrors {
     'gateway_unavailable': 'This payment method cannot be used right now. Choose another one.',
     'network': 'Could not reach Spideli Finance. Check your connection and try again.',
     'service_unavailable': 'This service is not available right now.',
+    'finance_region_unavailable': 'Spideli Finance is not available in your region yet.',
     'rate_unavailable': 'No exchange rate is available for these currencies right now.',
     'recipient_ambiguous': 'Several accounts use this number. Enter it with the country code.',
     'not_cancellable': 'This transfer can no longer be cancelled.',

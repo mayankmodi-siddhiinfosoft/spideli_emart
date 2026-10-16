@@ -3,8 +3,10 @@ import 'package:customer/constant/constant.dart';
 import 'package:customer/service/finance_direct.dart';
 import 'package:customer/service/finance_group_service.dart';
 import 'package:customer/service/finance_ledger.dart';
+import 'package:customer/service/finance_region_service.dart';
 import 'package:customer/service/finance_service.dart';
 import 'package:customer/utils/finance_investment_rules.dart';
+import 'package:customer/utils/finance_region_rules.dart';
 import 'package:customer/utils/finance_rules.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 
@@ -17,7 +19,9 @@ abstract final class FinanceInvestmentService {
   static String get _uid => FinanceService.uid;
   static DateTime? Function(dynamic) get _toDate => FinanceGroupService.toDate;
 
-  static Future<InvestmentConfig?> config() async => InvestmentConfig.parse((await _db.collection('platform_settings').doc('investments').get()).data());
+  /// The investment settings of the customer's Finance region
+  /// (`finance_settings/{regionId}_investments`), or null.
+  static Future<InvestmentConfig?> config({String? regionId}) async => InvestmentConfig.parse(await FinanceRegion.settings(FinanceModules.investments, regionId: regionId));
 
   /// The published catalog, in the manager's order.
   static Stream<List<Fund>> funds() => _db.collection('investment_funds').where('published', isEqualTo: true).limit(100).snapshots().map((s) {
@@ -101,6 +105,10 @@ abstract final class FinanceInvestmentService {
     final held = await FinanceDirect.existing('investment_holdings/${_uid}_${fund.id}');
     final bool holder = held != null && Holding.fromMap(held, _toDate).hasUnits;
     if (amount < now.minimumFor(holder: holder)) throw const FinanceException('below_minimum');
+    // The fund's currency must be one of the region's (the rules check it too).
+    final String regionId = await FinanceRegion.require();
+    final cfg = await config(regionId: regionId);
+    if (cfg == null || !cfg.currencies.contains(now.currency)) throw const FinanceException('fund_closed');
     final String path = 'investment_subscriptions/$requestKey';
     return FinanceDirect.payPlatform(
       funding: funding,
@@ -110,6 +118,7 @@ abstract final class FinanceInvestmentService {
       sourceKind: 'investment_subscriptions',
       sourceId: requestKey,
       description: 'Investment: ${now.name}',
+      regionId: regionId,
       existing: () => FinanceDirect.existing(path),
       writes: (posting) => InvestmentWrites.subscribe(
         id: requestKey,

@@ -38,7 +38,7 @@ String? _minHelper(String text, int min) {
 }
 
 /// Spideli Finance > Tontines: invitations and the user's tontines.
-/// `platform_settings/tontines` must exist (admin), else "not available";
+/// `finance_settings/{regionId}_tontines` must exist (admin), else "not available";
 /// a failed read offers Retry.
 class TontineListScreen extends StatefulWidget {
   const TontineListScreen({super.key});

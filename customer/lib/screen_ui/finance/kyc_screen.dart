@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart' show Timestamp;
 import 'package:customer/screen_ui/finance/fin_ds.dart';
 import 'package:customer/screen_ui/finance/finance_ui.dart';
 import 'package:customer/screen_ui/finance/finance_widgets.dart';
+import 'package:customer/service/finance_region_service.dart';
 import 'package:customer/service/finance_service.dart';
 import 'package:customer/themes/ds/ds.dart';
 import 'package:customer/themes/show_toast_dialog.dart';
@@ -25,7 +26,9 @@ const EdgeInsets _formPadding = EdgeInsets.fromLTRB(DsSpace.lg, DsSpace.lg, DsSp
 /// directly (FinanceService, .claude/FINANCE-DIRECT-FIRESTORE.md 3.1) and
 /// checked by the security rules; the review and its decisions are the admin
 /// panel's. The status shown is that of the latest application, live.
-/// Requirements come from `platform_settings/kyc`.
+/// Requirements come from the KYC settings of the customer's Finance region
+/// (`finance_settings/{regionId}_kyc`); an application keeps those of the
+/// region it was started in.
 class KycScreen extends StatefulWidget {
   const KycScreen({super.key});
 
@@ -37,6 +40,23 @@ class _KycScreenState extends State<KycScreen> {
   late Stream<List<Map<String, dynamic>>> _apps = FinanceService.myApplications();
 
   Widget _page(Widget body) => FinScaffold(title: "Identity verification".tr, body: body);
+
+  /// An open application follows the requirements of its own region (it
+  /// may have been started in another one).
+  Widget _openApplication(Map<String, dynamic> app, KycSettings current) {
+    final String own = (app['regionId'] ?? '').toString();
+    if (own.isEmpty || own == FinanceRegion.currentId) return _ApplicationView(key: ValueKey(app['id']), app: app, settings: current);
+    return FinConfig<KycSettings>(
+      key: ValueKey('kyc-settings-$own'),
+      load: () => FinanceService.kycSettings(regionId: own),
+      builder: (context, st) {
+        final settings = st.config;
+        final placeholder = st.placeholder(Icons.hourglass_empty_rounded, "Identity verification is not available yet. Please try again later.".tr);
+        if (placeholder != null || settings == null) return _page(FinBody(children: [placeholder ?? FinState.loading(rows: 4)]));
+        return _ApplicationView(key: ValueKey(app['id']), app: app, settings: settings);
+      },
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -58,7 +78,7 @@ class _KycScreenState extends State<KycScreen> {
             final apps = snap.data!;
             final open = apps.where((a) => KycStatus.isOpen(a['status']?.toString())).toList();
             // Its own page: the submit bar sits in the scaffold's bottom bar.
-            if (open.isNotEmpty) return _ApplicationView(key: ValueKey(open.first['id']), app: open.first, settings: settings);
+            if (open.isNotEmpty) return _openApplication(open.first, settings);
             final latest = apps.isEmpty ? null : apps.first;
             final approvedLevels = apps.where((a) => a['status'] == KycStatus.approved).map((a) => a['level'].toString()).toSet();
             return _page(_StartView(settings: settings, latest: latest, approvedLevels: approvedLevels));
@@ -680,11 +700,14 @@ class _DocumentsSection extends StatelessWidget {
     final String chip = status == 'uploaded' ? 'submitted' : status;
     final String label = switch (status) { 'accepted' => 'Accepted', 'rejected' => 'Rejected', 'uploaded' => 'Added', _ => 'Missing' };
     final bool replace = doc != null;
+    // The reviewer's note on a refused photo (what to fix before replacing it).
+    final String note = status == 'rejected' ? (doc?['note'] ?? '').toString().trim() : '';
     void upload() => _upload(context, type, side);
     return FinListTile(
       icon: type == 'selfie' ? Icons.face_retouching_natural_outlined : Icons.badge_outlined,
       iconTone: FinStatus.tone(chip),
       title: multiSide ? '${KycLabels.documentType(type).tr} · ${KycLabels.side(side).tr}' : KycLabels.documentType(type).tr,
+      subtitle: note.isEmpty ? null : note,
       status: chip,
       statusLabel: label.tr,
       onTap: upload,

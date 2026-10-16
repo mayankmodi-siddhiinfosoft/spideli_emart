@@ -43,7 +43,7 @@ String? _about(String? category) => switch (category) {
 
 // ------------------------------------------------------------------ overview
 
-/// Spideli Finance > Pay bills. `platform_settings/bills` must exist (admin).
+/// Spideli Finance > Pay bills. `finance_settings/{regionId}_bills` must exist (admin).
 class BillsScreen extends StatelessWidget {
   const BillsScreen({super.key});
 

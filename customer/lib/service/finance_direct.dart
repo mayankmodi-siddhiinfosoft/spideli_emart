@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart' hide Constant;
 import 'package:customer/service/finance_ledger.dart';
+import 'package:customer/service/finance_region_service.dart';
 import 'package:customer/service/finance_service.dart';
 
 /// The writes of paying the platform (.claude/FINANCE-DIRECT-FIRESTORE.md
@@ -170,8 +171,9 @@ abstract final class FinanceDirect {
   /// and writes the request with it, in one batch built by [writes] from the
   /// posting. A gateway payment is deposited into the wallet first (once per
   /// gateway payment). When [existing] finds the request already made (a
-  /// retry after a lost answer), nothing more is written. Returns the reply
-  /// of the payment sheet: `{status: succeeded, reference}`.
+  /// retry after a lost answer), nothing more is written. The request, its
+  /// posting and the deposit carry [regionId] (the region the request is
+  /// made in). Returns the reply of the payment sheet: `{status: succeeded, reference}`.
   static Future<Map<String, dynamic>> payPlatform({
     required FinanceFunding funding,
     required String type,
@@ -182,11 +184,12 @@ abstract final class FinanceDirect {
     required String description,
     required Future<Map<String, dynamic>?> Function() existing,
     required List<FinanceWrite> Function(FinancePosting posting) writes,
+    required String regionId,
   }) async {
     final String uid = FinanceService.uid;
     if (uid.isEmpty) throw const FinanceException('sign_in_required');
     if (amount <= 0) throw const FinanceException('amount_out_of_range');
-    if (!funding.isWallet) await _deposit(uid, funding, currency, amount, sourceKind, sourceId);
+    if (!funding.isWallet) await _deposit(uid, funding, currency, amount, sourceKind, sourceId, regionId);
     final done = await existing();
     if (done != null) return {'status': 'succeeded', 'reference': done['reference'] ?? ''};
     final String wallet = await walletWith(uid, currency, amount);
@@ -200,13 +203,13 @@ abstract final class FinanceDirect {
       sourceId: sourceId,
       description: description,
     );
-    await commit(writes(posting));
+    await commit(FinanceRegion.stamp(writes(posting), regionId));
     return {'status': 'succeeded', 'reference': posting.reference};
   }
 
   /// The gateway payment [funding] of [amount] into the user's wallet, once:
   /// `wallet_operations/{receiptId}` already there = deposited.
-  static Future<void> _deposit(String uid, FinanceFunding funding, String currency, int amount, String purposeKind, String purposeId) async {
+  static Future<void> _deposit(String uid, FinanceFunding funding, String currency, int amount, String purposeKind, String purposeId, String regionId) async {
     final String? id = funding.receiptId;
     if (id == null) throw const FinanceException('provider_unavailable');
     if (await existing('wallet_operations/$id') != null) return;
@@ -216,15 +219,17 @@ abstract final class FinanceDirect {
     } catch (e) {
       throw _mapped(e);
     }
-    await commit(FinancePay.gatewayDeposit(
-      uid: uid,
-      currency: currency,
-      walletId: w.id,
-      walletExists: w.exists,
-      amount: amount,
-      funding: funding,
-      purposeKind: purposeKind,
-      purposeId: purposeId,
-    ));
+    await commit(FinanceRegion.stamp(
+        FinancePay.gatewayDeposit(
+          uid: uid,
+          currency: currency,
+          walletId: w.id,
+          walletExists: w.exists,
+          amount: amount,
+          funding: funding,
+          purposeKind: purposeKind,
+          purposeId: purposeId,
+        ),
+        regionId));
   }
 }

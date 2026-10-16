@@ -6,11 +6,13 @@ import 'package:customer/controllers/wallet_controller.dart';
 import 'package:customer/payment/create_razor_pay_order_model.dart';
 import 'package:customer/payment/rozorpay_conroller.dart';
 import 'package:customer/service/finance_ledger.dart';
+import 'package:customer/service/finance_region_service.dart';
 import 'package:customer/service/finance_service.dart';
 import 'package:customer/service/fire_store_utils.dart';
 import 'package:customer/themes/show_toast_dialog.dart';
 import 'package:customer/utils/finance_payment_rules.dart';
 import 'package:customer/utils/finance_security_rules.dart';
+import 'package:customer/utils/region_service.dart';
 import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
 
@@ -25,6 +27,20 @@ class FinanceCheckout {
   final Set<String> enabled;
 
   FinanceCheckout._(this._ctrl, this.enabled);
+
+  /// FinanceGateways key -> the app's gateway name (RegionService.isGatewayUsable).
+  static const Map<String, String> _gatewayNames = {
+    FinanceGateways.orangeMoney: 'orangeMoney',
+    FinanceGateways.flutterwave: 'flutterWave',
+    FinanceGateways.stripe: 'stripe',
+    FinanceGateways.paypal: 'paypal',
+    FinanceGateways.payStack: 'payStack',
+    FinanceGateways.mercadoPago: 'mercadoPago',
+    FinanceGateways.xendit: 'xendit',
+    FinanceGateways.midTrans: 'midTrans',
+    FinanceGateways.payFast: 'payFast',
+    FinanceGateways.razorpay: 'razorpay',
+  };
 
   /// Loads the region's gateway settings. Never throws: no gateway when they cannot be read.
   static Future<FinanceCheckout> open() async {
@@ -49,6 +65,10 @@ class FinanceCheckout {
       if (ctrl.payFastModel.value.isEnable == true) FinanceGateways.payFast,
       if (ctrl.razorPayModel.value.isEnabled == true) FinanceGateways.razorpay,
     };
+    // Only the gateways serving the customer's Finance region (their
+    // "Available in Regions"), as the admin's region settings assume.
+    final String? region = FinanceRegion.currentId;
+    if (region != null) enabled.removeWhere((key) => !RegionService.isGatewayUsable(_gatewayNames[key] ?? key, region));
     return FinanceCheckout._(ctrl, enabled);
   }
 

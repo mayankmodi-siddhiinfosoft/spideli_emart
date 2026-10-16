@@ -77,7 +77,7 @@ Future<List<Map<String, dynamic>>?> _loadProjects() async {
 }
 
 /// Spideli Finance > Project financing: applications, projects and
-/// resources. `platform_settings/financing` must exist (admin), else "not
+/// resources. `finance_settings/{regionId}_financing` must exist (admin), else "not
 /// available"; a failed read offers Retry.
 class FinancingScreen extends StatefulWidget {
   const FinancingScreen({super.key});

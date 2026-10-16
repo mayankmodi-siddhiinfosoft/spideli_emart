@@ -2898,4 +2898,11 @@ const Map<String, String> arAR = {
   "Your name, email and message are removed from this opportunity.": "تُزال بياناتك (الاسم والبريد الإلكتروني والرسالة) من هذه الفرصة.",
   "Interest withdrawn": "تم سحب الاهتمام",
   "Withdraw my interest": "سحب اهتمامي",
+  "Spideli Finance is not available in your region yet.": "خدمة Spideli Finance غير متاحة في منطقتك بعد.",
+  "We could not tell which region you are in.": "تعذّر علينا تحديد المنطقة التي توجد فيها.",
+  "Choose your delivery location, then try again.": "اختر موقع التوصيل، ثم حاول مرة أخرى.",
+  "It will appear here as soon as it opens where you are.": "ستظهر هنا فور إطلاقها في منطقتك.",
+  "Region": "المنطقة",
+  "Several regions serve where you are. The services, limits and fees of the one you choose apply.": "تخدم عدة مناطق مكانك. تُطبَّق خدمات المنطقة التي تختارها وحدودها ورسومها.",
+  "Refused: @reason": "مرفوض: @reason",
 };

@@ -1184,7 +1184,19 @@ service cloud.firestore {
     function fPath(coll, id) { return /databases/$(database)/documents/$(coll)/$(id); }
     function fGet(coll, id) { return get(fPath(coll, id)).data; }
     function fAfter(coll, id) { return getAfter(fPath(coll, id)).data; }
-    function fSetting(id) { return fGet('platform_settings', id); }
+
+    // Settings per region (APP-SPEC-FINANCE-REGION-SETTINGS, 15 Oct 2026):
+    // finance_settings/{regionId}_{module}, never platform_settings. A new
+    // request names its regionId: one of the caller's users.regionIds whose
+    // region offers Finance (regions.financeEnabled), and its currency is one
+    // of that region's. A record already made keeps its region's settings
+    // (fRegionOf), whoever acts on it.
+    function fRegionSettings(regionId, module) { return fGet('finance_settings', regionId + '_' + module); }
+    function fFinanceRegion(regionId) {
+      return fIdOk(regionId) && hasProfile() && myProfile().get('regionIds', []) is list && regionId in myProfile().get('regionIds', [])
+        && fGet('regions', regionId).get('financeEnabled', false) == true;
+    }
+    function fRegionOf(m) { return m.get('regionId', ''); }
 
     function fIdOk(v) { return v is string && v.matches('^[A-Za-z0-9_-]{1,200}$'); }
     function fCurOk(v) { return v is string && v.matches('^[A-Z]{3}$'); }
@@ -1304,12 +1316,12 @@ service cloud.firestore {
 
     function fTxShapeOk(t, txId) {
       return fTxIdOk(txId)
-        && t.keys().hasOnly(['id', 'type', 'status', 'reference', 'currency', 'lines', 'userIds', 'accountIds', 'source', 'funding', 'gateway', 'description', 'createdBy', 'createdAt'])
+        && t.keys().hasOnly(['id', 'type', 'status', 'reference', 'currency', 'lines', 'userIds', 'accountIds', 'source', 'funding', 'gateway', 'description', 'regionId', 'createdBy', 'createdAt'])
         && t.keys().hasAll(['id', 'type', 'status', 'reference', 'currency', 'lines', 'userIds', 'accountIds', 'source', 'funding', 'createdBy', 'createdAt'])
         && t.id == txId && t.status == 'posted' && t.type in fClientTxTypes()
         && fStr(t.reference, 1, 40) && fCurOk(t.currency)
         && t.createdBy == uid() && t.createdAt == request.time
-        && fOptStr(t, 'description', 500)
+        && fOptStr(t, 'description', 500) && (!('regionId' in t) || fIdOk(t.regionId))
         && t.source is map && t.source.keys().hasOnly(['kind', 'id']) && t.source.kind is string && t.source.kind.matches('^[a-z_]{1,40}$') && fIdOk(t.source.id)
         && (t.funding == 'wallet' ? !('gateway' in t) : (t.funding == 'gateway' && fGatewayOk(t.gateway)))
         && t.userIds is list && t.userIds.size() >= 1 && t.userIds.size() <= 3
@@ -1560,29 +1572,34 @@ service cloud.firestore {
 
     function fDepositOk(opId, d) {
       let t = fTx(d.txId);
-      return d.keys().hasOnly(['id', 'userId', 'type', 'status', 'currency', 'amount', 'fee', 'total', 'accountId', 'gateway', 'txId', 'reference', 'purpose', 'createdAt', 'completedAt'])
+      return d.keys().hasOnly(['id', 'userId', 'type', 'status', 'currency', 'amount', 'fee', 'total', 'accountId', 'gateway', 'txId', 'reference', 'purpose', 'regionId', 'createdAt', 'completedAt'])
         && d.status == 'completed' && fStamp(d, 'completedAt') && d.get('fee', 0) == 0 && d.get('total', d.amount) == d.amount
         && fGatewayOk(d.gateway)
         && fTxNow(d.txId) && t.type == 'deposit' && t.funding == 'gateway' && t.gateway == d.gateway
         && t.source == {'kind': 'wallet_operations', 'id': opId} && t.currency == d.currency
         && t.lines[1].amount == d.amount && t.userIds == [uid()] && d.get('accountId', t.lines[1].accountId) == t.lines[1].accountId
-        // A plain deposit follows platform_settings/wallet.deposit; a gateway
-        // payment of a request (purpose) lands in the wallet whatever it is.
-        && (('purpose' in d) ? (d.purpose is map && d.purpose.keys().hasOnly(['kind', 'id'])) : (fDepositSettingsOk(d) && !fRestricted('wallet')));
+        // A plain deposit follows its region's wallet.deposit; a gateway
+        // payment of a request (purpose) lands in the wallet whatever it is,
+        // naming the region of the request it pays.
+        && (('purpose' in d) ? (d.purpose is map && d.purpose.keys().hasOnly(['kind', 'id']) && fIdOk(d.get('regionId', null)))
+                             : (fDepositSettingsOk(d) && !fRestricted('wallet')));
     }
 
     function fDepositSettingsOk(d) {
-      let c = fSetting('wallet').get('deposit', {});
-      return c.get('enabled', false) == true && fMinOk(c, d.currency, d.amount) && fMaxOk(c, d.currency, d.amount);
+      let w = fRegionSettings(d.regionId, 'wallet');
+      let c = w.get('deposit', {});
+      return fFinanceRegion(d.get('regionId', null)) && d.currency in w.get('currencies', [])
+        && c.get('enabled', false) == true && fMinOk(c, d.currency, d.amount) && fMaxOk(c, d.currency, d.amount);
     }
 
     // amount + fee leaves the wallet (one credit line: the platform keeps
     // the fee); the destination receives amount.
     function fWithdrawOk(opId, d) {
       let t = fTx(d.txId);
-      let w = fSetting('wallet');
+      let w = fRegionSettings(d.regionId, 'wallet');
       let c = w.get('withdraw', {});
-      return d.keys().hasOnly(['id', 'userId', 'type', 'status', 'currency', 'amount', 'fee', 'total', 'accountId', 'destination', 'txId', 'reference', 'createdAt'])
+      return d.keys().hasOnly(['id', 'userId', 'type', 'status', 'currency', 'amount', 'fee', 'total', 'accountId', 'destination', 'txId', 'reference', 'regionId', 'createdAt'])
+        && fFinanceRegion(d.get('regionId', null)) && d.currency in w.get('currencies', [])
         && d.status == 'pending' && fNonNeg(d.fee) && d.get('total', d.amount + d.fee) == d.amount + d.fee
         && d.destination is map && d.destination.size() <= 12 && d.destination.get('method', '') in c.get('methods', [])
         && c.get('enabled', false) == true && fMinOk(c, d.currency, d.amount) && fMaxOk(c, d.currency, d.amount)
@@ -1600,10 +1617,11 @@ service cloud.firestore {
     // (convert.maxRateAgeHours, default 48). What arrives is at most
     // (amount - fee) x rate in the target currency's minor units.
     function fConversionOk(opId, d) {
-      let c = fSetting('wallet').get('convert', {});
+      let c = fRegionSettings(d.regionId, 'wallet').get('convert', {});
       let s = fGet('exchange_rate_snapshots', d.rateSnapshotId);
       let age = c.get('maxRateAgeHours', 48) is int && c.get('maxRateAgeHours', 48) > 0 ? c.get('maxRateAgeHours', 48) : 48;
-      return d.keys().hasOnly(['id', 'userId', 'type', 'status', 'currency', 'amount', 'fee', 'total', 'accountId', 'toCurrency', 'toAccountId', 'rate', 'rateSource', 'rateObservedAt', 'rateSnapshotId', 'receiveAmount', 'txId', 'txIds', 'reference', 'createdAt', 'completedAt'])
+      return d.keys().hasOnly(['id', 'userId', 'type', 'status', 'currency', 'amount', 'fee', 'total', 'accountId', 'toCurrency', 'toAccountId', 'rate', 'rateSource', 'rateObservedAt', 'rateSnapshotId', 'receiveAmount', 'txId', 'txIds', 'reference', 'regionId', 'createdAt', 'completedAt'])
+        && fFinanceRegion(d.get('regionId', null))
         && d.status == 'completed' && fCurOk(d.toCurrency) && d.toCurrency != d.currency && fPos(d.receiveAmount) && fNonNeg(d.fee) && d.fee < d.amount
         && c.get('enabled', false) == true && d.currency in c.get('currencies', []) && d.toCurrency in c.get('currencies', [])
         && fIdOk(d.rateSnapshotId) && s.rate is number && s.rate > 0
@@ -1634,9 +1652,10 @@ service cloud.firestore {
 
     function fTransferCreateOk(id) {
       let d = request.resource.data;
-      let cfg = fSetting('transfers');
+      let cfg = fRegionSettings(d.regionId, 'transfers');
       let ch = cfg.get('channels', {}).get(d.channel, {});
-      return d.keys().hasOnly(['id', 'senderId', 'senderName', 'recipientId', 'participantIds', 'channel', 'recipient', 'recipientName', 'recipientVerified', 'currency', 'amount', 'fee', 'total', 'receiveAmount', 'note', 'funding', 'createdAt', 'status', 'reference', 'txId', 'completedAt'])
+      return d.keys().hasOnly(['id', 'senderId', 'senderName', 'recipientId', 'participantIds', 'channel', 'recipient', 'recipientName', 'recipientVerified', 'currency', 'amount', 'fee', 'total', 'receiveAmount', 'note', 'funding', 'regionId', 'createdAt', 'status', 'reference', 'txId', 'completedAt'])
+        && fFinanceRegion(d.get('regionId', null))
         && d.get('id', id) == id && d.senderId == uid() && fOptStr(d, 'senderName', 200) && fOptStr(d, 'recipientName', 200) && fOptStr(d, 'note', 500)
         && d.recipient is map && d.recipient.size() <= 12
         && fCurOk(d.currency) && d.currency in cfg.get('currencies', [])
@@ -1704,13 +1723,14 @@ service cloud.firestore {
     function fBillCreateOk(id) {
       let d = request.resource.data;
       let b = fGet('utility_billers', d.billerId);
-      return d.keys().hasOnly(['id', 'userId', 'billerId', 'billerName', 'category', 'account', 'customerName', 'packageCode', 'packageName', 'currency', 'amount', 'fee', 'total', 'status', 'reference', 'txId', 'funding', 'createdAt'])
+      return d.keys().hasOnly(['id', 'userId', 'billerId', 'billerName', 'category', 'account', 'customerName', 'packageCode', 'packageName', 'currency', 'amount', 'fee', 'total', 'status', 'reference', 'txId', 'funding', 'regionId', 'createdAt'])
+        && fFinanceRegion(d.get('regionId', null)) && d.currency in fRegionSettings(d.regionId, 'bills').get('currencies', [])
         && d.get('id', id) == id && d.userId == uid() && d.status == 'processing' && d.createdAt == request.time
         && fStr(d.account, 1, 64) && fStr(d.reference, 1, 40) && fIdOk(d.billerId)
         && b.get('published', false) == true && d.currency == b.currency
         && fPos(d.amount) && fNonNeg(d.fee) && d.total == d.amount + d.fee
         && fMinOk(b, d.currency, d.amount) && fMaxOk(b, d.currency, d.amount) && d.fee >= fFee(b, d.currency, d.amount)
-        && fReauthOk(fSetting('bills'), d.currency, d.total)
+        && fReauthOk(fRegionSettings(d.regionId, 'bills'), d.currency, d.total)
         && d.funding is map && (d.funding == {'method': 'wallet'} || fGatewayOk(d.funding))
         && !fRestricted('payments')
         && fTxNow(d.get('txId', '')) && fTx(d.txId).type == 'bill_payment' && fTx(d.txId).source == {'kind': 'utility_payment_requests', 'id': id}
@@ -1745,9 +1765,10 @@ service cloud.firestore {
 
     function fCardCreateOk(id) {
       let d = request.resource.data;
-      let cfg = fSetting('cards');
+      let cfg = fRegionSettings(d.regionId, 'cards');
       let fee = fPerCur(cfg.get('issuanceFee', null), d.currency, 0);
-      return d.keys().hasOnly(['id', 'userId', 'label', 'currency', 'network', 'status', 'balance', 'termsVersion', 'acceptedAt', 'issuanceFee', 'feeTxId', 'payment', 'reference', 'createdAt', 'updatedAt'])
+      return d.keys().hasOnly(['id', 'userId', 'label', 'currency', 'network', 'status', 'balance', 'termsVersion', 'acceptedAt', 'issuanceFee', 'feeTxId', 'payment', 'reference', 'regionId', 'createdAt', 'updatedAt'])
+        && fFinanceRegion(d.get('regionId', null))
         && d.get('id', id) == id && d.userId == uid() && d.status == 'requested' && d.get('balance', 0) == 0
         && fOptStr(d, 'label', 40) && fOptStr(d, 'network', 20) && fOptStr(d, 'reference', 40)
         && d.currency in cfg.get('currencies', []) && cfg.get('termsVersion', null) is number && d.termsVersion == cfg.termsVersion
@@ -1776,7 +1797,7 @@ service cloud.firestore {
 
     // A renewal request, once, with the renewal fee's posting when there is one.
     function fCardRenewOk(id, o, n, ch) {
-      let cfg = fSetting('cards');
+      let cfg = fRegionSettings(fRegionOf(o), 'cards');
       let fee = fPerCur(cfg.get('renewalFee', null), o.currency, 0);
       return ch.hasOnly(['renewalRequestedAt', 'renewalFee', 'renewalTxId', 'renewalReference', 'renewalPayment', 'updatedAt'])
         && o.get('renewalRequestedAt', null) == null && n.renewalRequestedAt == request.time
@@ -1788,20 +1809,21 @@ service cloud.firestore {
     function fCardRequestOk(id) {
       let d = request.resource.data;
       let c = fGet('virtual_cards', d.cardId);
-      return d.keys().hasOnly(['id', 'userId', 'cardId', 'type', 'amount', 'fee', 'total', 'currency', 'status', 'txId', 'reference', 'payment', 'destination', 'recipientId', 'recipient', 'createdAt', 'updatedAt'])
+      return d.keys().hasOnly(['id', 'userId', 'cardId', 'type', 'amount', 'fee', 'total', 'currency', 'status', 'txId', 'reference', 'payment', 'destination', 'recipientId', 'recipient', 'regionId', 'createdAt', 'updatedAt'])
+        && fFinanceRegion(d.get('regionId', null)) && d.currency in fRegionSettings(d.regionId, 'cards').get('currencies', [])
         && d.get('id', id) == id && d.userId == uid() && fIdOk(d.cardId) && c.userId == uid() && c.status == 'active' && d.currency == c.currency
         && fPos(d.amount) && fNonNeg(d.fee) && d.status == 'pending' && d.createdAt == request.time && fStamp(d, 'updatedAt') && fOptStr(d, 'reference', 40)
         && (d.type == 'fund' ? fCardFundOk(id, d)
            // card balance out (re-auth): to the wallet, or another user's card
            : (d.type in ['withdraw', 'transfer'] && d.fee == 0 && !('txId' in d) && fFresh() && d.amount <= c.get('balance', 0)
               && (d.type == 'withdraw'
-                  ? (fSetting('cards').get('capabilities', {}).get('withdraw', false) == true && d.destination is map)
+                  ? (fRegionSettings(d.regionId, 'cards').get('capabilities', {}).get('withdraw', false) == true && d.destination is map)
                   : (fIdOk(d.recipientId) && d.recipientId != uid() && d.recipient is map && d.recipient.size() <= 6))));
     }
 
     // A top-up: amount + fee posted to the platform (card_funding).
     function fCardFundOk(id, d) {
-      let cfg = fSetting('cards');
+      let cfg = fRegionSettings(d.regionId, 'cards');
       let mn = fPerCur(cfg.get('minFunding', null), d.currency, null);
       let mx = fPerCur(cfg.get('maxFunding', null), d.currency, null);
       return d.get('total', d.amount + d.fee) == d.amount + d.fee
@@ -1819,7 +1841,7 @@ service cloud.firestore {
     function fCardLimitsOk(cardId) {
       let d = request.resource.data;
       let c = fGet('virtual_cards', cardId);
-      let lim = fSetting('cards').get('limits', {});
+      let lim = fRegionSettings(fRegionOf(c), 'cards').get('limits', {});
       return fFresh() && d.keys().hasOnly(['userId', 'cardId', 'perTransaction', 'daily', 'monthly', 'allowOnline', 'allowInternational', 'status', 'updatedAt', 'appliedAt', 'reason'])
         && d.userId == uid() && d.cardId == cardId && c.userId == uid() && c.status in ['active', 'frozen']
         && d.status == 'pending' && d.updatedAt == request.time
@@ -1863,8 +1885,9 @@ service cloud.firestore {
 
     function fGoalCreateOk(id) {
       let d = request.resource.data;
-      let cfg = fSetting('savings');
-      return d.keys().hasOnly(['id', 'ownerId', 'memberIds', 'invitedIds', 'name', 'purpose', 'description', 'currency', 'targetAmount', 'savedAmount', 'deadline', 'schedule', 'status', 'accountId', 'createdAt', 'updatedAt'])
+      let cfg = fRegionSettings(d.regionId, 'savings');
+      return d.keys().hasOnly(['id', 'ownerId', 'memberIds', 'invitedIds', 'name', 'purpose', 'description', 'currency', 'targetAmount', 'savedAmount', 'deadline', 'schedule', 'status', 'accountId', 'regionId', 'createdAt', 'updatedAt'])
+        && fFinanceRegion(d.get('regionId', null))
         && d.get('id', id) == id && d.ownerId == uid() && d.memberIds == [uid()]
         && d.get('invitedIds', []) is list && !(uid() in d.get('invitedIds', []))
         && (d.get('invitedIds', []).size() == 0 || cfg.get('groupGoals', false) == true)
@@ -1879,7 +1902,7 @@ service cloud.firestore {
     }
 
     function fGoalInviteOk(o, n) {
-      let cfg = fSetting('savings');
+      let cfg = fRegionSettings(fRegionOf(o), 'savings');
       return n.invitedIds is list && n.invitedIds.toSet().hasAll(o.get('invitedIds', [])) && n.invitedIds.size() == n.invitedIds.toSet().size()
         && !n.invitedIds.toSet().hasAny(o.memberIds) && cfg.get('groupGoals', false) == true
         && o.memberIds.size() + n.invitedIds.size() <= cfg.get('maxMembers', 10);
@@ -1891,7 +1914,7 @@ service cloud.firestore {
       return uid() in o.get('invitedIds', []) && !(uid() in n.invitedIds)
         && n.invitedIds.toSet() == o.invitedIds.toSet().difference([uid()].toSet())
         && (n.memberIds == o.memberIds
-            || (n.memberIds == o.memberIds.concat([uid()]) && o.status == 'active' && o.memberIds.size() < fSetting('savings').get('maxMembers', 10)
+            || (n.memberIds == o.memberIds.concat([uid()]) && o.status == 'active' && o.memberIds.size() < fRegionSettings(fRegionOf(o), 'savings').get('maxMembers', 10)
                 && !fRestricted('savings')));
     }
 
@@ -1916,7 +1939,7 @@ service cloud.firestore {
       return fStampCh(ch, n, 'updatedAt') && (
         // the owner's edits
         (ch.hasOnly(['name', 'description', 'deadline', 'schedule', 'updatedAt']) && o.ownerId == uid() && o.status == 'active'
-          && fStr(n.name, 1, 80) && fOptStr(n, 'description', 1000) && fDate(n.get('deadline', null)) && fScheduleOk(n.get('schedule', null), fSetting('savings')))
+          && fStr(n.name, 1, 80) && fOptStr(n, 'description', 1000) && fDate(n.get('deadline', null)) && fScheduleOk(n.get('schedule', null), fRegionSettings(fRegionOf(o), 'savings')))
         // the owner invites (arrayUnion)
         || (ch.hasOnly(['invitedIds', 'updatedAt']) && o.ownerId == uid() && o.status == 'active' && fGoalInviteOk(o, n))
         // the invitee answers
@@ -1959,7 +1982,7 @@ service cloud.firestore {
 
     function fSoloWithdrawalOk(id, d, g) {
       let t = fTx(d.txId);
-      return (g.savedAmount >= g.targetAmount || fSetting('savings').get('earlyWithdrawal', {}).get('allowed', false) == true)
+      return (g.savedAmount >= g.targetAmount || fRegionSettings(fRegionOf(g), 'savings').get('earlyWithdrawal', {}).get('allowed', false) == true)
         && d.completedAt == request.time
         && fTxNow(d.txId) && t.type == 'savings_withdrawal' && t.source == {'kind': 'savings_withdrawals', 'id': id}
         && t.lines[0].accountId == 'goal_' + d.goalId && t.lines[0].amount == d.amount
@@ -1997,8 +2020,9 @@ service cloud.firestore {
 
     function fTontineCreateOk(id) {
       let d = request.resource.data;
-      let cfg = fSetting('tontines');
-      return d.keys().hasOnly(['id', 'name', 'description', 'rules', 'currency', 'contributionAmount', 'frequency', 'membersLimit', 'payoutOrderMethod', 'startDate', 'status', 'adminIds', 'memberIds', 'currentCycle', 'potAccountId', 'createdBy', 'createdAt', 'updatedAt'])
+      let cfg = fRegionSettings(d.regionId, 'tontines');
+      return d.keys().hasOnly(['id', 'name', 'description', 'rules', 'currency', 'contributionAmount', 'frequency', 'membersLimit', 'payoutOrderMethod', 'startDate', 'status', 'adminIds', 'memberIds', 'currentCycle', 'potAccountId', 'regionId', 'createdBy', 'createdAt', 'updatedAt'])
+        && fFinanceRegion(d.get('regionId', null))
         && d.get('id', id) == id && d.createdBy == uid() && d.adminIds == [uid()] && d.memberIds == [uid()]
         && d.status == 'forming' && d.get('currentCycle', 0) == 0 && d.get('potAccountId', 'tontine_' + id) == 'tontine_' + id
         && fStr(d.name, 1, 80) && fOptStr(d, 'description', 1000) && fOptStr(d, 'rules', 5000)
@@ -2024,7 +2048,7 @@ service cloud.firestore {
         // an admin starts it: active, cycle 1, one cycle per member (created in this batch)
         || (ch.hasOnly(['status', 'currentCycle', 'nextDueAt', 'startDate', 'startedAt', 'updatedAt']) && uid() in o.adminIds
           && o.status == 'forming' && n.status == 'active' && n.currentCycle == 1 && fStampCh(ch, n, 'startedAt')
-          && o.memberIds.size() >= fSetting('tontines').get('minMembers', 2)
+          && o.memberIds.size() >= fRegionSettings(fRegionOf(o), 'tontines').get('minMembers', 2)
           && fAfter('tontine_cycles', id + '_1').status == 'collecting'
           && fAfter('tontine_cycles', id + '_' + string(o.memberIds.size())).number == o.memberIds.size())
         // an admin moves on after paying the current cycle (same batch)
@@ -2233,8 +2257,9 @@ service cloud.firestore {
     function fLoanApplyOk(id) {
       let d = request.resource.data;
       let g = fGet('tontines', d.groupId);
-      let cfg = fSetting('lending');
-      return d.keys().hasOnly(['id', 'borrowerId', 'borrowerName', 'groupId', 'groupName', 'status', 'currency', 'amount', 'fundedAmount', 'outstandingAmount', 'repaidAmount', 'durationMonths', 'repaymentFrequency', 'purpose', 'description', 'eligibleVoterIds', 'lenderIds', 'votes', 'documents', 'createdAt', 'updatedAt'])
+      let cfg = fRegionSettings(d.regionId, 'lending');
+      return d.keys().hasOnly(['id', 'borrowerId', 'borrowerName', 'groupId', 'groupName', 'status', 'currency', 'amount', 'fundedAmount', 'outstandingAmount', 'repaidAmount', 'durationMonths', 'repaymentFrequency', 'purpose', 'description', 'eligibleVoterIds', 'lenderIds', 'votes', 'documents', 'regionId', 'createdAt', 'updatedAt'])
+        && fFinanceRegion(d.get('regionId', null))
         && d.get('id', id) == id && d.borrowerId == uid() && d.status == 'submitted' && fIdOk(d.groupId) && fOptStr(d, 'groupName', 200)
         && uid() in g.memberIds
         && d.eligibleVoterIds is list && d.eligibleVoterIds.size() > 0 && d.eligibleVoterIds.size() == g.memberIds.size() - 1
@@ -2282,7 +2307,7 @@ service cloud.firestore {
     // funding when the quorum and the approval are reached (VoteTally),
     // else rejected with reason 'vote'.
     function fCloseVoteOk(o, n, ch) {
-      let v = fSetting('lending').get('voting', {});
+      let v = fRegionSettings(fRegionOf(o), 'lending').get('voting', {});
       let cast = o.votes.yes + o.votes.no;
       let el = o.eligibleVoterIds.size();
       let pass = el > 0 && cast * 100 >= el * v.get('quorumPercent', 101) && o.votes.yes * 100 >= cast * v.get('approvalPercent', 101);
@@ -2361,7 +2386,7 @@ service cloud.firestore {
     function fAgreementOk(loanId) {
       let d = request.resource.data;
       let l = fGet('loan_applications', loanId);
-      let cfg = fSetting('lending');
+      let cfg = fRegionSettings(fRegionOf(l), 'lending');
       return d.keys().hasOnly(['loanId', 'borrowerId', 'version', 'principal', 'currency', 'interestMethod', 'annualInterestPercent', 'fee', 'totalRepayable', 'latePenaltyPercent', 'durationMonths', 'repaymentFrequency', 'terms', 'installments', 'createdAt', 'acceptedAt'])
         && d.loanId == loanId && d.version == 1 && d.get('borrowerId', l.borrowerId) == l.borrowerId
         && l.status == 'funding' && fAfter('loan_applications', loanId).status == 'agreement_pending' && uid() in l.eligibleVoterIds
@@ -2473,7 +2498,8 @@ service cloud.firestore {
       let f = fGet('investment_funds', d.fundId);
       let t = fTx(d.txId);
       let holder = exists(fPath('investment_holdings', uid() + '_' + d.fundId)) && fGet('investment_holdings', uid() + '_' + d.fundId).get('units', 0) > 0;
-      return d.keys().hasOnly(['id', 'userId', 'fundId', 'fundName', 'assetClass', 'currency', 'amount', 'fee', 'termsVersion', 'signatureName', 'riskAcknowledged', 'acceptedAt', 'status', 'txId', 'reference', 'payment', 'createdAt', 'updatedAt'])
+      return d.keys().hasOnly(['id', 'userId', 'fundId', 'fundName', 'assetClass', 'currency', 'amount', 'fee', 'termsVersion', 'signatureName', 'riskAcknowledged', 'acceptedAt', 'status', 'txId', 'reference', 'payment', 'regionId', 'createdAt', 'updatedAt'])
+        && fFinanceRegion(d.get('regionId', null)) && d.currency in fRegionSettings(d.regionId, 'investments').get('currencies', [])
         && d.get('id', id) == id && d.userId == uid() && fIdOk(d.fundId) && f.get('published', false) == true && f.get('status', '') == 'open'
         && d.currency == f.currency && d.termsVersion == f.termsVersion && d.riskAcknowledged == true && fStr(d.signatureName, 2, 120)
         && d.acceptedAt == request.time && d.createdAt == request.time && fStamp(d, 'updatedAt') && d.status == 'paid'
@@ -2526,7 +2552,8 @@ service cloud.firestore {
     function fQuoteRequestOk(id) {
       let d = request.resource.data;
       let p = fGet('insurance_products', d.productId);
-      return d.keys().hasOnly(['id', 'userId', 'productId', 'productName', 'partnerName', 'category', 'currency', 'answers', 'frequency', 'coverStart', 'termMonths', 'status', 'createdAt', 'updatedAt'])
+      return d.keys().hasOnly(['id', 'userId', 'productId', 'productName', 'partnerName', 'category', 'currency', 'answers', 'frequency', 'coverStart', 'termMonths', 'status', 'regionId', 'createdAt', 'updatedAt'])
+        && fFinanceRegion(d.get('regionId', null)) && d.currency in fRegionSettings(d.regionId, 'insurance').get('currencies', [])
         && d.get('id', id) == id && d.userId == uid() && fIdOk(d.productId) && p.get('published', false) == true && p.get('status', 'open') == 'open'
         && d.status == 'requested' && d.createdAt == request.time && fStamp(d, 'updatedAt') && d.currency == p.currency
         && d.answers is map && d.answers.size() <= 50 && fStr(d.frequency, 1, 20) && fDate(d.coverStart)
@@ -2690,12 +2717,13 @@ service cloud.firestore {
     match /financing_projects/{projectId} {
       allow get: if signedIn() && (resource == null || resource.data.ownerId == uid());
       allow list: if signedIn() && resource.data.ownerId == uid();
-      allow create: if signedIn() && request.resource.data.keys().hasOnly(['id', 'ownerId', 'name', 'sector', 'country', 'city', 'description', 'stage', 'employees', 'foundedYear', 'website', 'createdAt', 'updatedAt'])
+      allow create: if signedIn() && request.resource.data.keys().hasOnly(['id', 'ownerId', 'name', 'sector', 'country', 'city', 'description', 'stage', 'employees', 'foundedYear', 'website', 'regionId', 'createdAt', 'updatedAt'])
         && request.resource.data.get('id', projectId) == projectId && request.resource.data.ownerId == uid()
-        && request.resource.data.createdAt == request.time && fProjectOk(request.resource.data, fSetting('financing'));
+        && fFinanceRegion(request.resource.data.get('regionId', null))
+        && request.resource.data.createdAt == request.time && fProjectOk(request.resource.data, fRegionSettings(request.resource.data.regionId, 'financing'));
       allow update: if signedIn() && resource.data.ownerId == uid()
         && fChanged().hasOnly(['name', 'sector', 'country', 'city', 'description', 'stage', 'employees', 'foundedYear', 'website', 'updatedAt'])
-        && fStampCh(fChanged(), request.resource.data, 'updatedAt') && fProjectOk(request.resource.data, fSetting('financing'));
+        && fStampCh(fChanged(), request.resource.data, 'updatedAt') && fProjectOk(request.resource.data, fRegionSettings(fRegionOf(resource.data), 'financing'));
     }
 
     function fFinancingAppUpdateOk() {
@@ -2704,7 +2732,7 @@ service cloud.firestore {
       let ch = fChanged();
       return o.ownerId == uid() && fStampCh(ch, n, 'updatedAt') && (
         (ch.hasOnly(['financingType', 'amount', 'currency', 'durationMonths', 'useOfFunds', 'updatedAt']) && fFinancingEditable(o.status)
-          && fFinancingAmountOk(n, fSetting('financing')))
+          && fFinancingAmountOk(n, fRegionSettings(fRegionOf(o), 'financing')))
         || (ch.hasOnly(['status', 'declarationAccepted', 'declarationAcceptedAt', 'submittedAt', 'ownerMessage', 'reason', 'updatedAt'])
           && fFinancingEditable(o.status) && n.status == 'submitted' && n.declarationAccepted == true
           && n.submittedAt == request.time && fStampCh(ch, n, 'declarationAcceptedAt') && n.get('reason', null) == null && fOptStr(n, 'ownerMessage', 2000))
@@ -2715,19 +2743,20 @@ service cloud.firestore {
     match /financing_applications/{applicationId} {
       allow get: if signedIn() && (resource == null || resource.data.ownerId == uid() || uid() in resource.data.get('reviewerIds', []));
       allow list: if signedIn() && (resource.data.ownerId == uid() || uid() in resource.data.reviewerIds);
-      allow create: if signedIn() && request.resource.data.keys().hasOnly(['id', 'ownerId', 'projectId', 'projectName', 'financingType', 'amount', 'currency', 'durationMonths', 'useOfFunds', 'status', 'reviewerIds', 'createdAt', 'updatedAt'])
+      allow create: if signedIn() && request.resource.data.keys().hasOnly(['id', 'ownerId', 'projectId', 'projectName', 'financingType', 'amount', 'currency', 'durationMonths', 'useOfFunds', 'status', 'reviewerIds', 'regionId', 'createdAt', 'updatedAt'])
+        && fFinanceRegion(request.resource.data.get('regionId', null))
         && request.resource.data.get('id', applicationId) == applicationId && request.resource.data.ownerId == uid()
         && request.resource.data.status == 'draft' && request.resource.data.get('reviewerIds', []) == []
         && request.resource.data.createdAt == request.time && fOptStr(request.resource.data, 'projectName', 200)
         && fIdOk(request.resource.data.projectId) && fGet('financing_projects', request.resource.data.projectId).ownerId == uid()
-        && fFinancingAmountOk(request.resource.data, fSetting('financing'));
+        && fFinancingAmountOk(request.resource.data, fRegionSettings(request.resource.data.regionId, 'financing'));
       allow update: if signedIn() && fFinancingAppUpdateOk();
     }
 
     function fFinancingDocOk(id) {
       let d = request.resource.data;
       let a = fGet('financing_applications', d.applicationId);
-      let cfg = fSetting('financing');
+      let cfg = fRegionSettings(fRegionOf(a), 'financing');
       return d.keys().hasOnly(['id', 'ownerId', 'applicationId', 'type', 'name', 'storagePath', 'contentType', 'size', 'status', 'note', 'uploadedAt'])
         && d.get('id', id) == id && d.ownerId == uid() && fIdOk(d.applicationId) && a.ownerId == uid() && fFinancingEditable(a.status)
         && d.type in cfg.get('documentTypes', []) && fStr(d.name, 1, 200) && d.status == 'received' && d.get('note', '') == ''
@@ -2830,8 +2859,9 @@ service cloud.firestore {
 
     function fKycCreateOk(id) {
       let d = request.resource.data;
-      let lv = fSetting('kyc').get('levels', {}).get(d.level, null);
-      return d.keys().hasOnly(['id', 'userId', 'level', 'accountType', 'status', 'revision', 'personal', 'business', 'reason', 'createdAt', 'updatedAt'])
+      let lv = fRegionSettings(d.regionId, 'kyc').get('levels', {}).get(d.level, null);
+      return d.keys().hasOnly(['id', 'userId', 'level', 'accountType', 'status', 'revision', 'personal', 'business', 'reason', 'regionId', 'createdAt', 'updatedAt'])
+        && fFinanceRegion(d.get('regionId', null))
         && d.get('id', id) == id && d.userId == uid() && d.status == 'draft' && d.revision == 1 && d.get('reason', null) == null
         && lv is map && d.accountType in lv.get('accountTypes', []) && d.createdAt == request.time && fStamp(d, 'updatedAt')
         && fKycDetailsOk(d);
@@ -2852,7 +2882,7 @@ service cloud.firestore {
     function fKycDocCreateOk(id) {
       let d = request.resource.data;
       let a = fGet('kyc_applications', d.applicationId);
-      let s = fSetting('kyc');
+      let s = fRegionSettings(fRegionOf(a), 'kyc');
       return d.keys().hasOnly(['id', 'applicationId', 'userId', 'type', 'side', 'status', 'storagePath', 'contentType', 'size', 'revision', 'createdAt'])
         && d.get('id', id) == id && d.userId == uid() && fIdOk(d.applicationId) && a.userId == uid() && a.status in ['draft', 'additional_info_required']
         && d.type in s.get('documentTypes', {}) && d.side in s.documentTypes[d.type].get('sides', [])
@@ -2961,6 +2991,9 @@ service cloud.firestore {
     // documents only: its list queries must filter where('published', ==, true)
     // (a rule on a defaulted field would let an unfiltered query through).
 
+    // The settings of each region (the app reads only these) and the old
+    // global documents the admin keeps until every app reads the regions.
+    match /finance_settings/{id} { allow read: if signedIn(); }
     match /platform_settings/{id} { allow read: if signedIn(); }
 
     match /investment_funds/{id} { allow read: if signedIn() && resource.data.published == true; }

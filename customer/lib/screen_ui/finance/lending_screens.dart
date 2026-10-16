@@ -8,6 +8,7 @@ import 'package:customer/screen_ui/finance/finance_widgets.dart';
 import 'package:customer/screen_ui/finance/tontine_screens.dart';
 import 'package:customer/service/finance_group_service.dart';
 import 'package:customer/service/finance_lending_service.dart';
+import 'package:customer/service/finance_region_service.dart';
 import 'package:customer/service/finance_service.dart';
 import 'package:customer/themes/ds/ds.dart';
 import 'package:customer/themes/show_toast_dialog.dart';
@@ -100,7 +101,7 @@ class _RestrictionNotice extends StatelessWidget {
 }
 
 /// Spideli Finance > Loans: borrow from, and lend to, the members of your
-/// groups. `platform_settings/lending` must exist (admin), else "not
+/// groups. `finance_settings/{regionId}_lending` must exist (admin), else "not
 /// available"; a failed read offers Retry.
 class LoansScreen extends StatefulWidget {
   /// The tab it opens on: 0 borrow, 1 group requests, 2 lent.
@@ -668,13 +669,13 @@ class _LoanScreenState extends State<LoanScreen> {
   late Stream<Loan?> _loan = FinanceLendingService.loan(widget.loanId);
   late final Stream<List<Map<String, dynamic>>> _schedule = FinanceLendingService.schedule(widget.loanId);
 
-  /// Read once; without it the loan still shows (wallet payments only).
-  late final Future<LendingConfig?> _config = FinanceLendingService.config().catchError((_) => null);
+  /// Live; without it the loan still shows (wallet payments only).
+  late final Stream<LendingConfig?> _config = FinanceRegion.live(() => FinanceLendingService.config().catchError((_) => null));
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<LendingConfig?>(
-      future: _config,
+    return StreamBuilder<LendingConfig?>(
+      stream: _config,
       builder: (context, cfgSnap) => StreamBuilder<Loan?>(
         stream: _loan,
         builder: (context, snap) {

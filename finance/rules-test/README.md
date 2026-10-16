@@ -20,7 +20,16 @@ be downloaded. Each test file loads `../../firestore.rules.draft` into the
 emulator through its rules API (`firebase.json` cannot point at a file outside
 this folder) and re-seeds the data before every test.
 
-Last run (14 Oct 2026): **79 tests, 79 pass** (~35 s).
+Last run (16 Oct 2026): **85 tests, 85 pass** (~40 s).
+
+The Firebase CLI puts its own Node first on the PATH; when `node --test` is
+refused there, give the system Node's full path (`$(which node) --test ...`).
+
+**Regions.** The settings are `finance_settings/{regionId}_{module}` and every
+request names its `regionId` (APP-SPEC-FINANCE-REGION-SETTINGS). The fixtures
+seed a Finance region (`REGION`), one without Finance and one that is nobody's;
+`batchOf` and `seed` add `REGION` to regional documents as the app does
+(`FinanceRegionRules.stamp`); `rawBatchOf` sends a batch exactly as written.
 
 ## Layout
 
@@ -33,6 +42,7 @@ Last run (14 Oct 2026): **79 tests, 79 pass** (~35 s).
 | `test/loans.test.js` | member loans |
 | `test/kyc_cards.test.js` | KYC, users' finance fields, virtual cards |
 | `test/products.test.js` | chat, catalogs, investments, insurance, financing, intelligence, restriction scopes |
+| `test/region.test.js` | Finance per region: the caller's region offering Finance, its currencies, its settings (never `platform_settings`), a record's own region |
 | `test/flows.test.js` | the app's other write shapes (must be accepted) and their misuse |
 
 ## What the tests prove

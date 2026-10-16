@@ -6,9 +6,9 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
-import { Batch, Client, SERVER_TIME, inc, seed, clear, loadRules, admin } from './firestore-rest.js';
+import { Batch, Client, SERVER_TIME, inc, seed as seedRaw, clear, loadRules, admin } from './firestore-rest.js';
 
-export { Batch, Client, SERVER_TIME, inc, seed, clear, admin };
+export { Batch, Client, SERVER_TIME, inc, clear, admin, seedRaw };
 export { union, DELETE, ts, dbl } from './firestore-rest.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -23,6 +23,47 @@ export async function setUp() {
   }
   await clear();
   await seed(baseDocs());
+}
+
+// ---- regions (APP-SPEC-FINANCE-REGION-SETTINGS) ---------------------------
+// Settings are finance_settings/{regionId}_{module}; every request names the
+// regionId it is made in, one of the caller's users.regionIds offering
+// Finance. The app stamps it on every request and posting it creates
+// (FinanceRegionRules.stamp); batchOf and seed below do the same, so each
+// test reads as before and region.test.js breaks the region on purpose.
+
+export const REGION = 'reg_yaounde';
+export const OTHER_REGION = 'reg_india'; // offers Finance, in INR; not in the users' regionIds
+export const OFF_REGION = 'reg_douala'; // Finance not switched on
+
+export const REGION_COLLECTIONS = new Set([
+  'wallet_operations', 'money_transfers', 'utility_payment_requests', 'virtual_cards', 'card_funding_requests',
+  'savings_goals', 'tontines', 'loan_applications', 'investment_subscriptions', 'insurance_quotes',
+  'financing_projects', 'financing_applications', 'kyc_applications', 'ledger_transactions',
+]);
+
+const collectionOf = (path) => (path.split('/').length === 2 ? path.split('/')[0] : '');
+
+/** FinanceRegionRules.stamp: [regionId] on every regional document [writes] create. */
+export function stamp(writes, regionId = REGION) {
+  return writes.map((w) =>
+    w.op === 'create' && REGION_COLLECTIONS.has(collectionOf(w.path)) && w.data && !('regionId' in w.data) ? { ...w, data: { ...w.data, regionId } } : w);
+}
+
+/** The settings documents of [regionId]: { module: fields } -> finance_settings/{regionId}_{module}. */
+export function regionSettings(regionId, modules) {
+  const out = {};
+  for (const [module, data] of Object.entries(modules)) out[`finance_settings/${regionId}_${module}`] = { ...data, regionId, module };
+  return out;
+}
+
+/** Seeds [docs] (rules bypassed); a regional record without a regionId gets REGION, as the app writes it. */
+export async function seed(docs) {
+  const out = {};
+  for (const [path, data] of Object.entries(docs)) {
+    out[path] = REGION_COLLECTIONS.has(collectionOf(path)) && data && !('regionId' in data) ? { ...data, regionId: REGION } : data;
+  }
+  return seedRaw(out);
 }
 
 // ---- people --------------------------------------------------------------
@@ -47,7 +88,7 @@ export const day = 24 * 3600 * 1000;
 export const later = (ms) => new Date(Date.now() + ms);
 
 function user(uid, extra = {}) {
-  return { id: uid, role: 'customer', active: true, firstName: uid, email: `${uid}@example.test`, wallet_amount: 0, ...extra };
+  return { id: uid, role: 'customer', active: true, firstName: uid, email: `${uid}@example.test`, wallet_amount: 0, regionIds: [REGION, OFF_REGION], ...extra };
 }
 
 export function walletDoc(uid, cur, balance) {
@@ -63,41 +104,56 @@ export function baseDocs() {
     [`users/${EVE}`]: user(EVE, { financeRestriction: { status: 'restricted', reason: 'insolvency', since: new Date(), scopes: ['loans'] } }),
     [`users/${MALLORY}`]: user(MALLORY),
 
-    'platform_settings/wallet': {
-      currencies: ['XAF', 'EUR'],
-      deposit: { enabled: true, min: { XAF: 100 }, max: { XAF: 5000000 } },
-      withdraw: { enabled: true, methods: ['mobile_money', 'wave', 'bank'], min: { XAF: 500 }, max: { XAF: 1000000 }, feePercent: 1, feeFixed: { XAF: 0 }, feeMax: { XAF: 5000 } },
-      convert: { enabled: true, currencies: ['XAF', 'EUR'], feePercent: 1, maxRateAgeHours: 48 },
-      security: { reauthAbove: { XAF: 50000 } },
-    },
-    'platform_settings/transfers': {
-      currencies: ['XAF'],
-      sourceMethods: ['wallet', 'mobile_money'],
-      security: { reauthAbove: { XAF: 50000 } },
-      channels: {
-        internal: { enabled: true, feePercent: 1, min: { XAF: 100 }, max: { XAF: 1000000 } },
-        mobile_money: { enabled: true, operators: ['Orange Money'], feePercent: 1, feeFixed: { XAF: 0 }, feeMax: { XAF: 5000 }, min: { XAF: 500 }, max: { XAF: 500000 } },
+    [`regions/${REGION}`]: { id: REGION, name: 'Yaounde', currencyId: 'cur_xaf', financeEnabled: true, publish: true },
+    [`regions/${OTHER_REGION}`]: { id: OTHER_REGION, name: 'India', currencyId: 'cur_inr', financeEnabled: true, publish: true },
+    [`regions/${OFF_REGION}`]: { id: OFF_REGION, name: 'Douala', currencyId: 'cur_xaf', financeEnabled: false, publish: true },
+    // The other region's own settings: INR only.
+    ...regionSettings(OTHER_REGION, {
+      wallet: { currencies: ['INR'], deposit: { enabled: true, min: { INR: 100 } }, withdraw: { enabled: true, methods: ['bank'], feePercent: 0 }, convert: { enabled: false, currencies: [] } },
+      transfers: { currencies: ['INR'], sourceMethods: ['wallet'], channels: { internal: { enabled: true, feePercent: 0, min: { INR: 100 } } } },
+    }),
+    // The old global documents stay for older apps; no rule reads them.
+    'platform_settings/wallet': { currencies: ['XAF'], deposit: { enabled: false }, withdraw: { enabled: false }, convert: { enabled: false } },
+
+    ...regionSettings(REGION, {
+      wallet: {
+        currencies: ['XAF', 'EUR'],
+        deposit: { enabled: true, min: { XAF: 100 }, max: { XAF: 5000000 } },
+        withdraw: { enabled: true, methods: ['mobile_money', 'wave', 'bank'], min: { XAF: 500 }, max: { XAF: 1000000 }, feePercent: 1, feeFixed: { XAF: 0 }, feeMax: { XAF: 5000 } },
+        convert: { enabled: true, currencies: ['XAF', 'EUR'], feePercent: 1, maxRateAgeHours: 48 },
+        security: { reauthAbove: { XAF: 50000 } },
       },
-    },
-    'platform_settings/bills': { currencies: ['XAF'], categories: ['electricity'], paymentMethods: ['wallet'], security: { reauthAbove: { XAF: 100000 } } },
-    'platform_settings/savings': { purposes: ['travel', 'other'], currencies: ['XAF'], frequencies: ['monthly'], groupGoals: true, maxMembers: 5, earlyWithdrawal: { allowed: true }, paymentMethods: ['wallet'] },
-    'platform_settings/tontines': { currencies: ['XAF'], frequencies: ['monthly'], minMembers: 2, maxMembers: 10, payoutOrderMethods: ['fixed', 'random'], paymentMethods: ['wallet'], minContribution: { XAF: 1000 } },
-    'platform_settings/lending': {
-      currencies: ['XAF'], minAmount: { XAF: 10000 }, maxAmount: { XAF: 1000000 }, durationsMonths: [3, 6], repaymentFrequencies: ['monthly'],
-      purposes: ['business', 'other'], interest: { method: 'flat', annualPercent: 12 }, feePercent: 2, latePenaltyPercent: 5,
-      voting: { quorumPercent: 50, approvalPercent: 60, durationHours: 48 }, paymentMethods: ['wallet'],
-    },
-    'platform_settings/cards': {
-      currencies: ['XAF'], issuerName: 'Issuer', network: 'visa', maxCardsPerUser: 3, issuanceFee: { XAF: 1000 }, renewalFee: { XAF: 0 },
-      fundingMethods: ['wallet'], minFunding: { XAF: 1000 }, maxFunding: { XAF: 500000 }, fundingFeePercent: 1.5,
-      limits: { maxPerTransaction: { XAF: 300000 }, maxDaily: { XAF: 500000 }, maxMonthly: { XAF: 2000000 } },
-      capabilities: { withdraw: true, renew: true, secureDetails: 'none' }, terms: 'Terms', termsVersion: 2,
-    },
-    'platform_settings/kyc': {
-      documentTypes: { national_id: { sides: ['front', 'back'] }, selfie: { sides: ['front'] } },
-      levels: { basic: { accountTypes: ['individual'], requiredDocuments: [{ anyOf: ['national_id'] }] } },
-      allowedContentTypes: ['image/jpeg', 'application/pdf'], maxFileBytes: 10485760,
-    },
+      transfers: {
+        currencies: ['XAF'],
+        sourceMethods: ['wallet', 'mobile_money'],
+        security: { reauthAbove: { XAF: 50000 } },
+        channels: {
+          internal: { enabled: true, feePercent: 1, min: { XAF: 100 }, max: { XAF: 1000000 } },
+          mobile_money: { enabled: true, operators: ['Orange Money'], feePercent: 1, feeFixed: { XAF: 0 }, feeMax: { XAF: 5000 }, min: { XAF: 500 }, max: { XAF: 500000 } },
+        },
+      },
+      bills: { currencies: ['XAF'], categories: ['electricity'], paymentMethods: ['wallet'], security: { reauthAbove: { XAF: 100000 } } },
+      savings: { purposes: ['travel', 'other'], currencies: ['XAF'], frequencies: ['monthly'], groupGoals: true, maxMembers: 5, earlyWithdrawal: { allowed: true }, paymentMethods: ['wallet'] },
+      tontines: { currencies: ['XAF'], frequencies: ['monthly'], minMembers: 2, maxMembers: 10, payoutOrderMethods: ['fixed', 'random'], paymentMethods: ['wallet'], minContribution: { XAF: 1000 } },
+      lending: {
+        currencies: ['XAF'], minAmount: { XAF: 10000 }, maxAmount: { XAF: 1000000 }, durationsMonths: [3, 6], repaymentFrequencies: ['monthly'],
+        purposes: ['business', 'other'], interest: { method: 'flat', annualPercent: 12 }, feePercent: 2, latePenaltyPercent: 5,
+        voting: { quorumPercent: 50, approvalPercent: 60, durationHours: 48 }, paymentMethods: ['wallet'],
+      },
+      cards: {
+        currencies: ['XAF'], issuerName: 'Issuer', network: 'visa', maxCardsPerUser: 3, issuanceFee: { XAF: 1000 }, renewalFee: { XAF: 0 },
+        fundingMethods: ['wallet'], minFunding: { XAF: 1000 }, maxFunding: { XAF: 500000 }, fundingFeePercent: 1.5,
+        limits: { maxPerTransaction: { XAF: 300000 }, maxDaily: { XAF: 500000 }, maxMonthly: { XAF: 2000000 } },
+        capabilities: { withdraw: true, renew: true, secureDetails: 'none' }, terms: 'Terms', termsVersion: 2,
+      },
+      kyc: {
+        documentTypes: { national_id: { sides: ['front', 'back'] }, selfie: { sides: ['front'] } },
+        levels: { basic: { accountTypes: ['individual'], requiredDocuments: [{ anyOf: ['national_id'] }] } },
+        allowedContentTypes: ['image/jpeg', 'application/pdf'], maxFileBytes: 10485760,
+      },
+      investments: { currencies: ['XAF'], paymentMethods: ['wallet'] },
+      insurance: { currencies: ['XAF'], paymentMethods: ['wallet'] },
+    }),
 
     // Accounts: the platform's (admin-made) and two wallets.
     'financial_accounts/platform_XAF': { id: 'platform_XAF', kind: 'platform', currency: 'XAF', balance: 0, normalSide: 'credit', status: 'active', lastTxId: '' },
@@ -180,8 +236,13 @@ export function plan({ type, currency = 'XAF', from, to, amount, fee = 0, newAcc
   return { txId: id, reference: ref, writes };
 }
 
-/** The writes as a batch (create = set, update = update, merge = set merge). */
+/** The writes as a batch (create = set, update = update, merge = set merge), stamped with REGION as the app stamps them. */
 export function batchOf(...groups) {
+  return rawBatchOf(stamp(groups.flat()));
+}
+
+/** The writes as a batch, exactly as given (no regionId added). */
+export function rawBatchOf(...groups) {
   const b = new Batch();
   for (const w of groups.flat()) {
     if (w.op === 'create') b.set(w.path, w.data);

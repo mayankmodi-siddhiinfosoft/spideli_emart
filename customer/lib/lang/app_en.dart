@@ -2901,4 +2901,11 @@ const Map<String, String> enUS = {
   "Your name, email and message are removed from this opportunity.": "Your name, email and message are removed from this opportunity.",
   "Interest withdrawn": "Interest withdrawn",
   "Withdraw my interest": "Withdraw my interest",
+  "Spideli Finance is not available in your region yet.": "Spideli Finance is not available in your region yet.",
+  "We could not tell which region you are in.": "We could not tell which region you are in.",
+  "Choose your delivery location, then try again.": "Choose your delivery location, then try again.",
+  "It will appear here as soon as it opens where you are.": "It will appear here as soon as it opens where you are.",
+  "Region": "Region",
+  "Several regions serve where you are. The services, limits and fees of the one you choose apply.": "Several regions serve where you are. The services, limits and fees of the one you choose apply.",
+  "Refused: @reason": "Refused: @reason",
 };
