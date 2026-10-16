@@ -20,11 +20,16 @@ class RegionModel {
   /// Only an explicit `publish: false` hides a region from lists.
   bool publish;
 
-  RegionModel({this.id, this.name, this.code, this.countryCode, this.currencyId, this.zoneIds = const [], this.publish = true});
+  /// Spideli Finance is offered in this region (`financeEnabled`, set in the
+  /// admin's Region Management). Only an explicit `true` offers it.
+  bool financeEnabled;
+
+  RegionModel({this.id, this.name, this.code, this.countryCode, this.currencyId, this.zoneIds = const [], this.publish = true, this.financeEnabled = false});
 
   RegionModel.fromJson(Map<String, dynamic> json, {String? docId})
     : zoneIds = _idList(json['zoneIds']),
-      publish = json['publish'] != false {
+      publish = json['publish'] != false,
+      financeEnabled = json['financeEnabled'] == true {
     id = (json['id']?.toString().isNotEmpty == true) ? json['id'].toString() : docId;
     name = json['name']?.toString();
     code = json['code']?.toString();

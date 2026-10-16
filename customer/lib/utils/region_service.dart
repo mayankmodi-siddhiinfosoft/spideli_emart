@@ -475,6 +475,9 @@ class RegionService {
   /// The globally active currency (fallback only).
   static CurrencyModel? get globalCurrency => Constant.currencyModel;
 
+  /// A row of `currencies` by its id (`regions.currencyId`).
+  static CurrencyModel? currencyById(String? currencyId) => _isEmpty(currencyId) ? null : _currencies[currencyId];
+
   /// Currency configured for [regionId]; null when the region is unknown or
   /// has no currency (normal for old records).
   static CurrencyModel? currencyForRegion(String? regionId) {
