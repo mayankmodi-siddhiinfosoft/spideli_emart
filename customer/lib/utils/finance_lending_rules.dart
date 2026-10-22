@@ -50,6 +50,27 @@ class LendingConfig {
   /// each loan agreement.
   final String agreementTerms;
 
+  /// Loan Centre settings (`loanCentre`: enabled, guarantorRequired, maxAmount).
+  final bool loanCentreEnabled;
+  final bool loanCentreGuarantorRequired;
+  final Map<String, int> loanCentreMaxAmount;
+
+  /// Deadline extension settings (`extension`: enabled, extraInterestPercent, maxDays, maxPerLoan).
+  final bool extensionEnabled;
+  final double extensionExtraInterestPercent;
+  final int extensionMaxDays;
+  final int extensionMaxPerLoan;
+
+  /// Blacklist settings (`blacklist`: afterDays, automatic).
+  final int blacklistAfterDays;
+  final bool blacklistAutomatic;
+
+  /// Commission settings (`commission`: disbursementPercent).
+  final double disbursementCommissionPercent;
+
+  /// Whether group tontine loans require a guarantor (spec section 1 & 9).
+  final bool groupGuarantorRequired;
+
   const LendingConfig({
     required this.currencies,
     required this.minAmount,
@@ -66,6 +87,17 @@ class LendingConfig {
     required this.votingHours,
     required this.paymentMethods,
     this.agreementTerms = '',
+    this.loanCentreEnabled = true,
+    this.loanCentreGuarantorRequired = true,
+    this.loanCentreMaxAmount = const {},
+    this.groupGuarantorRequired = true,
+    this.extensionEnabled = true,
+    this.extensionExtraInterestPercent = 0.0,
+    this.extensionMaxDays = 30,
+    this.extensionMaxPerLoan = 2,
+    this.blacklistAfterDays = 30,
+    this.blacklistAutomatic = true,
+    this.disbursementCommissionPercent = 0.0,
   });
 
   static Map<String, int> _amounts(dynamic v) => v is Map ? {for (final e in v.entries) e.key.toString(): _int(e.value)} : const {};
@@ -78,6 +110,10 @@ class LendingConfig {
     final methods = _strings(raw['paymentMethods']);
     final interest = raw['interest'] is Map ? Map<String, dynamic>.from(raw['interest'] as Map) : const <String, dynamic>{};
     final voting = raw['voting'] is Map ? Map<String, dynamic>.from(raw['voting'] as Map) : const <String, dynamic>{};
+    final lc = raw['loanCentre'] is Map ? Map<String, dynamic>.from(raw['loanCentre'] as Map) : const <String, dynamic>{};
+    final ext = raw['extension'] is Map ? Map<String, dynamic>.from(raw['extension'] as Map) : const <String, dynamic>{};
+    final bl = raw['blacklist'] is Map ? Map<String, dynamic>.from(raw['blacklist'] as Map) : const <String, dynamic>{};
+    final com = raw['commission'] is Map ? Map<String, dynamic>.from(raw['commission'] as Map) : const <String, dynamic>{};
     final method = interest['method']?.toString();
     final quorum = _int(voting['quorumPercent']);
     final approval = _int(voting['approvalPercent']);
@@ -100,6 +136,16 @@ class LendingConfig {
       votingHours: _int(voting['durationHours']),
       paymentMethods: methods,
       agreementTerms: raw['agreementTerms']?.toString().trim() ?? '',
+      loanCentreEnabled: lc['enabled'] != false,
+      loanCentreGuarantorRequired: lc['guarantorRequired'] != false,
+      loanCentreMaxAmount: _amounts(lc['maxAmount']),
+      extensionEnabled: ext['enabled'] != false,
+      extensionExtraInterestPercent: _num(ext['extraInterestPercent']),
+      extensionMaxDays: _int(ext['maxDays']) > 0 ? _int(ext['maxDays']) : 30,
+      extensionMaxPerLoan: _int(ext['maxPerLoan']) > 0 ? _int(ext['maxPerLoan']) : 2,
+      blacklistAfterDays: _int(bl['afterDays']) > 0 ? _int(bl['afterDays']) : 30,
+      blacklistAutomatic: bl['automatic'] != false,
+      disbursementCommissionPercent: _num(com['disbursementPercent']),
     );
   }
 
@@ -219,6 +265,29 @@ class Loan {
   final DateTime? votingEndsAt;
   final String? reason;
 
+  /// Visibility: "group" (within a tontine) | "public" (Loan Centre, spec section 4).
+  final String visibility;
+
+  /// Anonymity: true for tontine loans (lenders see loan_offers, not borrower uid).
+  final bool anonymous;
+
+  /// Offered / agreed interest rate percent.
+  final double interestPercent;
+
+  /// Professional tontine: 1/3 of confirmed salary cap at request time.
+  final int? salaryCap;
+
+  /// Guarantor details: { userId, status: "invited" | "accepted" | "declined", acceptedAt }.
+  final Map<String, dynamic>? guarantor;
+
+  /// Who pays an unpaid debt: the sponsor (professional / association) or guarantor.
+  final String? liablePartyId;
+
+  /// The member's credit score band ("good" | "fair" | "poor").
+  final String? scoreBand;
+
+  final DateTime? createdAt;
+
   const Loan({
     required this.id,
     required this.borrowerId,
@@ -227,20 +296,28 @@ class Loan {
     required this.status,
     required this.currency,
     required this.amount,
-    required this.fundedAmount,
-    required this.outstandingAmount,
+    this.fundedAmount = 0,
+    this.outstandingAmount = 0,
     this.repaidAmount = 0,
     required this.durationMonths,
     required this.frequency,
     required this.purpose,
-    required this.description,
-    required this.eligibleVoterIds,
-    required this.lenderIds,
-    required this.votesYes,
-    required this.votesNo,
-    required this.votingEndsAt,
-    required this.reason,
+    this.description = '',
+    this.eligibleVoterIds = const [],
+    this.lenderIds = const [],
+    this.votesYes = 0,
+    this.votesNo = 0,
+    this.votingEndsAt,
+    this.reason,
     this.regionId = '',
+    this.visibility = 'group',
+    this.anonymous = true,
+    this.interestPercent = 0.0,
+    this.salaryCap,
+    this.guarantor,
+    this.liablePartyId,
+    this.scoreBand,
+    this.createdAt,
   });
 
   /// The region it was requested in (`regionId`): its lending settings apply.
@@ -270,11 +347,197 @@ class Loan {
       votingEndsAt: toDate(m['votingEndsAt']),
       reason: m['reason']?.toString(),
       regionId: m['regionId']?.toString() ?? '',
+      visibility: m['visibility']?.toString() ?? 'group',
+      anonymous: m['anonymous'] != false,
+      interestPercent: _num(m['interestPercent']),
+      salaryCap: m['salaryCap'] != null ? _int(m['salaryCap']) : null,
+      guarantor: m['guarantor'] is Map ? Map<String, dynamic>.from(m['guarantor'] as Map) : null,
+      liablePartyId: m['liablePartyId']?.toString(),
+      scoreBand: m['scoreBand']?.toString(),
+      createdAt: toDate(m['createdAt']),
     );
   }
 
+  bool get isPublic => visibility == 'public';
+  bool get isGroup => visibility == 'group';
+  String? get guarantorUserId => guarantor?['userId']?.toString();
+  String? get guarantorStatus => guarantor?['status']?.toString();
+  bool get hasGuarantor => guarantorUserId != null && guarantorUserId!.isNotEmpty;
+  bool get isGuarantorAccepted => guarantorStatus == 'accepted';
+  bool get isGuarantorPending => guarantorStatus == 'invited';
+
   int get fundingRemaining => amount - fundedAmount > 0 ? amount - fundedAmount : 0;
   double get fundingProgress => amount <= 0 ? 0 : (fundedAmount / amount).clamp(0, 1).toDouble();
+}
+
+/// The anonymous copy members see (`loan_offers/{loanId}`, spec section 4):
+/// contains no borrower uid or name.
+class LoanOffer {
+  final String loanId;
+  final String groupId;
+  final String visibility;
+  final int amount;
+  final String currency;
+  final int durationMonths;
+  final String repaymentFrequency;
+  final double interestPercent;
+  final String purpose;
+  final String scoreBand;
+  final String status;
+  final int fundedAmount;
+  final int votesYes;
+  final int votesNo;
+  final DateTime? votingEndsAt;
+  final DateTime? createdAt;
+
+  const LoanOffer({
+    required this.loanId,
+    required this.groupId,
+    required this.visibility,
+    required this.amount,
+    required this.currency,
+    required this.durationMonths,
+    required this.repaymentFrequency,
+    required this.interestPercent,
+    required this.purpose,
+    required this.scoreBand,
+    required this.status,
+    required this.fundedAmount,
+    required this.votesYes,
+    required this.votesNo,
+    required this.votingEndsAt,
+    required this.createdAt,
+  });
+
+  int get fundingRemaining => amount - fundedAmount > 0 ? amount - fundedAmount : 0;
+  double get fundingProgress => amount <= 0 ? 0 : (fundedAmount / amount).clamp(0, 1).toDouble();
+
+  static LoanOffer fromMap(Map<String, dynamic> m, DateTime? Function(dynamic) toDate) {
+    final votes = m['votes'] is Map ? Map<String, dynamic>.from(m['votes'] as Map) : const <String, dynamic>{};
+    return LoanOffer(
+      loanId: m['loanId']?.toString() ?? m['id']?.toString() ?? '',
+      groupId: m['groupId']?.toString() ?? '',
+      visibility: m['visibility']?.toString() ?? 'group',
+      amount: _int(m['amount']),
+      currency: m['currency']?.toString() ?? '',
+      durationMonths: _int(m['durationMonths']),
+      repaymentFrequency: m['repaymentFrequency']?.toString() ?? Frequency.monthly,
+      interestPercent: _num(m['interestPercent']),
+      purpose: m['purpose']?.toString() ?? 'other',
+      scoreBand: m['scoreBand']?.toString() ?? 'fair',
+      status: m['status']?.toString() ?? 'submitted',
+      fundedAmount: _int(m['fundedAmount']),
+      votesYes: _int(votes['yes']),
+      votesNo: _int(votes['no']),
+      votingEndsAt: toDate(m['votingEndsAt']),
+      createdAt: toDate(m['createdAt']),
+    );
+  }
+
+  Loan toLoan({String groupName = ''}) => Loan(
+        id: loanId,
+        borrowerId: '',
+        groupId: groupId,
+        groupName: groupName.isNotEmpty ? groupName : (visibility == 'public' ? 'Loan Centre' : ''),
+        amount: amount,
+        currency: currency,
+        purpose: purpose,
+        durationMonths: durationMonths,
+        frequency: repaymentFrequency,
+        status: status,
+        fundedAmount: fundedAmount,
+        visibility: visibility,
+        anonymous: true,
+        scoreBand: scoreBand,
+        interestPercent: interestPercent,
+        createdAt: createdAt,
+      );
+}
+
+
+/// A member's credit score (`credit_scores/{uid}`, spec section 5).
+class CreditScore {
+  final String userId;
+  final int score;
+  final String band; // "good" | "fair" | "poor"
+  final List<CreditFactor> factors;
+  final DateTime? updatedAt;
+
+  const CreditScore({
+    required this.userId,
+    required this.score,
+    required this.band,
+    required this.factors,
+    this.updatedAt,
+  });
+
+  static CreditScore fromMap(Map<String, dynamic> m, DateTime? Function(dynamic) toDate) => CreditScore(
+        userId: m['userId']?.toString() ?? '',
+        score: _int(m['score']),
+        band: m['band']?.toString() ?? 'fair',
+        factors: m['factors'] is List ? (m['factors'] as List).whereType<Map>().map((x) => CreditFactor.fromMap(Map<String, dynamic>.from(x))).toList() : const [],
+        updatedAt: toDate(m['updatedAt']),
+      );
+}
+
+class CreditFactor {
+  final String label;
+  final String impact; // "positive" | "negative" | "neutral"
+  final String detail;
+
+  const CreditFactor({required this.label, required this.impact, required this.detail});
+
+  static CreditFactor fromMap(Map<String, dynamic> m) => CreditFactor(
+        label: m['label']?.toString() ?? '',
+        impact: m['impact']?.toString() ?? 'neutral',
+        detail: m['detail']?.toString() ?? '',
+      );
+}
+
+/// A request to extend an installment's due date (`loan_extension_requests/{id}`, spec section 8).
+class LoanExtensionRequest {
+  final String id;
+  final String loanId;
+  final String borrowerId;
+  final int installmentNumber;
+  final int requestedDays;
+  final String reason;
+  final String status; // "requested" | "approved" | "rejected"
+  final double extraInterestPercent;
+  final DateTime? newDueDate;
+  final String? decidedBy;
+  final DateTime? decidedAt;
+  final DateTime? createdAt;
+
+  const LoanExtensionRequest({
+    required this.id,
+    required this.loanId,
+    required this.borrowerId,
+    required this.installmentNumber,
+    required this.requestedDays,
+    required this.reason,
+    required this.status,
+    required this.extraInterestPercent,
+    required this.newDueDate,
+    required this.decidedBy,
+    required this.decidedAt,
+    required this.createdAt,
+  });
+
+  static LoanExtensionRequest fromMap(Map<String, dynamic> m, DateTime? Function(dynamic) toDate) => LoanExtensionRequest(
+        id: m['id']?.toString() ?? '',
+        loanId: m['loanId']?.toString() ?? '',
+        borrowerId: m['borrowerId']?.toString() ?? '',
+        installmentNumber: _int(m['installmentNumber']),
+        requestedDays: _int(m['requestedDays']),
+        reason: m['reason']?.toString() ?? '',
+        status: m['status']?.toString() ?? 'requested',
+        extraInterestPercent: _num(m['extraInterestPercent']),
+        newDueDate: toDate(m['newDueDate']),
+        decidedBy: m['decidedBy']?.toString(),
+        decidedAt: toDate(m['decidedAt']),
+        createdAt: toDate(m['createdAt']),
+      );
 }
 
 /// The vote as it is counted when it closes (and shown while it is open),
@@ -424,15 +687,24 @@ abstract final class LoanChecks {
     required int durationMonths,
     required String frequency,
     required bool restricted,
+    int? salaryCap,
+    bool guarantorRequired = false,
+    String? guarantorUserId,
+    bool isPublic = false,
   }) {
     if (restricted) return 'finance_restricted';
-    if (uid.isEmpty || !memberIds.contains(uid)) return 'permission_denied';
-    if (LoanPlans.voters(memberIds, uid).isEmpty) return 'loan_no_voters';
+    if (!isPublic) {
+      if (uid.isEmpty || !memberIds.contains(uid)) return 'permission_denied';
+      if (LoanPlans.voters(memberIds, uid).isEmpty) return 'loan_no_voters';
+    }
     if (!config.currencies.contains(currency) || !config.durationsMonths.contains(durationMonths) || !config.repaymentFrequencies.contains(frequency)) {
       return 'state_changed';
     }
-    final int? max = config.maxFor(currency);
+    final int? max = isPublic && config.loanCentreMaxAmount.containsKey(currency) ? config.loanCentreMaxAmount[currency] : config.maxFor(currency);
     if (amount < config.minFor(currency) || (max != null && amount > max)) return 'amount_out_of_range';
+    if (salaryCap != null && salaryCap > 0 && amount > salaryCap) return 'salary_cap_exceeded';
+    if (guarantorRequired && (guarantorUserId == null || guarantorUserId.trim().isEmpty)) return 'guarantor_required';
+    if (guarantorUserId != null && guarantorUserId == uid) return 'invite_self';
     return null;
   }
 
@@ -478,7 +750,8 @@ abstract final class LoanChecks {
 /// can never write twice: `loan_votes/{loanId}_{uid}`,
 /// `loan_fundings/{loanId}_{uid}_{n}`, `loan_repayments/{loanId}_{requestKey}`,
 /// `loan_disbursements/{loanId}`, `loan_agreements/{loanId}`,
-/// `loan_schedules/{loanId}`; the loan's money sits in `loan_{loanId}`.
+/// `loan_schedules/{loanId}`, `loan_offers/{loanId}`,
+/// `loan_extension_requests/{id}`; the loan's money sits in `loan_{loanId}`.
 abstract final class LoanPlans {
   static Object get _now => FieldValue.serverTimestamp();
 
@@ -496,7 +769,10 @@ abstract final class LoanPlans {
 
   static String repaymentId(String loanId, String requestKey) => '${loanId}_$requestKey';
 
-  /// A new request in [groupId] (a tontine the borrower belongs to).
+  static String extensionId(String loanId, int installmentNumber) => '${loanId}_$installmentNumber';
+
+  /// A new request in [groupId] (a tontine the borrower belongs to) or Loan Centre (visibility: "public").
+  /// Writes BOTH `loan_applications/$loanId` AND the anonymous copy `loan_offers/$loanId` (spec section 4).
   static List<FinanceWrite> apply({
     required String loanId,
     required String uid,
@@ -509,31 +785,71 @@ abstract final class LoanPlans {
     required int durationMonths,
     required String repaymentFrequency,
     required String description,
-  }) =>
-      [
-        FinanceWrite(_loan(loanId), 'create', {
-          'id': loanId,
-          'borrowerId': uid,
-          'groupId': groupId,
-          'groupName': groupName,
-          'status': 'submitted',
-          'currency': currency,
-          'amount': amount,
-          'fundedAmount': 0,
-          'outstandingAmount': 0,
-          'repaidAmount': 0,
-          'durationMonths': durationMonths,
-          'repaymentFrequency': repaymentFrequency,
-          'purpose': purpose,
-          'description': description,
-          'eligibleVoterIds': voters(memberIds, uid),
-          'lenderIds': <String>[],
-          'votes': {'yes': 0, 'no': 0},
-          'documents': <Map<String, dynamic>>[],
-          'createdAt': _now,
-          'updatedAt': _now,
-        }),
-      ];
+    String visibility = 'group',
+    bool anonymous = true,
+    double interestPercent = 0.0,
+    int? salaryCap,
+    String? guarantorUserId,
+    String? liablePartyId,
+    String? scoreBand,
+  }) {
+    final bool hasGuarantor = guarantorUserId != null && guarantorUserId.isNotEmpty;
+    final String initialStatus = hasGuarantor ? 'guarantor_pending' : 'submitted';
+    return [
+      FinanceWrite(_loan(loanId), 'create', {
+        'id': loanId,
+        'borrowerId': uid,
+        'groupId': groupId,
+        'groupName': groupName,
+        'visibility': visibility,
+        'anonymous': anonymous,
+        'interestPercent': interestPercent,
+        if (salaryCap != null) 'salaryCap': salaryCap,
+        if (hasGuarantor)
+          'guarantor': {
+            'userId': guarantorUserId,
+            'status': 'invited',
+            'invitedAt': _now,
+          },
+        if (liablePartyId != null && liablePartyId.isNotEmpty) 'liablePartyId': liablePartyId,
+        if (scoreBand != null && scoreBand.isNotEmpty) 'scoreBand': scoreBand,
+        'status': initialStatus,
+        'currency': currency,
+        'amount': amount,
+        'fundedAmount': 0,
+        'outstandingAmount': 0,
+        'repaidAmount': 0,
+        'durationMonths': durationMonths,
+        'repaymentFrequency': repaymentFrequency,
+        'purpose': purpose,
+        'description': description,
+        'eligibleVoterIds': voters(memberIds, uid),
+        'lenderIds': <String>[],
+        'votes': {'yes': 0, 'no': 0},
+        'documents': <Map<String, dynamic>>[],
+        'createdAt': _now,
+        'updatedAt': _now,
+      }),
+      FinanceWrite('loan_offers/$loanId', 'create', {
+        'loanId': loanId,
+        'groupId': groupId,
+        'visibility': visibility,
+        'amount': amount,
+        'currency': currency,
+        'durationMonths': durationMonths,
+        'repaymentFrequency': repaymentFrequency,
+        'interestPercent': interestPercent,
+        'purpose': purpose,
+        'scoreBand': scoreBand ?? 'fair',
+        'status': initialStatus,
+        'fundedAmount': 0,
+        'votes': {'yes': 0, 'no': 0},
+        'votingEndsAt': null,
+        'createdAt': _now,
+        'updatedAt': _now,
+      }),
+    ];
+  }
 
   /// A supporting document already uploaded to [storagePath]
   /// (`loan_documents/{uid}/{loanId}/…`).
@@ -546,7 +862,7 @@ abstract final class LoanPlans {
         }),
       ];
 
-  /// One vote (create-only) and its count.
+  /// One vote (create-only) and its count in both application and anonymous offer.
   static List<FinanceWrite> vote(Loan l, String uid, {required bool approve, String comment = ''}) => [
         FinanceWrite('loan_votes/${voteId(l.id, uid)}', 'create', {
           'loanId': l.id,
@@ -559,10 +875,14 @@ abstract final class LoanPlans {
           approve ? 'votes.yes' : 'votes.no': FieldValue.increment(1),
           'updatedAt': _now,
         }),
+        FinanceWrite('loan_offers/${l.id}', 'update', {
+          approve ? 'votes.yes' : 'votes.no': FieldValue.increment(1),
+          'updatedAt': _now,
+        }),
       ];
 
   /// Closes the vote: `funding` with the quorum and the approval, else
-  /// `rejected` (`reason: "vote"`).
+  /// `rejected` (`reason: "vote"`). Updates both application and anonymous offer.
   static ({String status, List<FinanceWrite> writes}) closeVote(Loan l, {required int quorumPercent, required int approvalPercent}) {
     final tally = VoteTally(eligible: l.eligibleVoterIds.length, yes: l.votesYes, no: l.votesNo, quorumPercent: quorumPercent, approvalPercent: approvalPercent);
     final String status = tally.wouldApprove ? 'funding' : 'rejected';
@@ -575,9 +895,55 @@ abstract final class LoanPlans {
           'votingClosedAt': _now,
           'updatedAt': _now,
         }),
+        FinanceWrite('loan_offers/${l.id}', 'update', {
+          'status': status,
+          'updatedAt': _now,
+        }),
       ],
     );
   }
+
+  /// Guarantor accepts or declines being a guarantor for a loan (spec section 4).
+  static List<FinanceWrite> respondGuarantor(String loanId, String uid, bool accept) => [
+        FinanceWrite(_loan(loanId), 'update', {
+          'guarantor.status': accept ? 'accepted' : 'declined',
+          if (accept) 'guarantor.acceptedAt': _now,
+          'status': accept ? 'submitted' : 'rejected',
+          if (!accept) 'reason': 'guarantor_declined',
+          'updatedAt': _now,
+        }),
+        FinanceWrite('loan_offers/$loanId', 'update', {
+          'status': accept ? 'submitted' : 'rejected',
+          'updatedAt': _now,
+        }),
+      ];
+
+  /// Borrower requests a deadline extension for an installment (spec section 8).
+  static List<FinanceWrite> requestExtension({
+    required String extensionId,
+    required String loanId,
+    required String borrowerId,
+    required int installmentNumber,
+    required int requestedDays,
+    required String reason,
+    double extraInterestPercent = 0.0,
+  }) =>
+      [
+        FinanceWrite('loan_extension_requests/$extensionId', 'create', {
+          'id': extensionId,
+          'loanId': loanId,
+          'borrowerId': borrowerId,
+          'installmentNumber': installmentNumber,
+          'requestedDays': requestedDays,
+          'reason': reason,
+          'status': 'requested',
+          'extraInterestPercent': extraInterestPercent,
+          'newDueDate': null,
+          'decidedBy': null,
+          'decidedAt': null,
+          'createdAt': _now,
+        }),
+      ];
 
   /// The agreement the last funder issues (version 1): the terms of
   /// `finance_settings/{regionId}_lending` and the installments of [LoanCalculator]
@@ -677,6 +1043,11 @@ abstract final class LoanPlans {
         if (last) 'fundedAt': _now,
         'updatedAt': _now,
       }),
+      FinanceWrite('loan_offers/${loan.id}', 'update', {
+        'fundedAmount': loan.fundedAmount + amount,
+        if (last) 'status': 'agreement_pending',
+        'updatedAt': _now,
+      }),
       if (last && agreement != null) FinanceWrite('loan_agreements/${loan.id}', 'create', agreement),
     ]);
   }
@@ -773,6 +1144,10 @@ abstract final class LoanPlans {
         'repaidAmount': 0,
         'updatedAt': _now,
       }),
+      FinanceWrite('loan_offers/${loan.id}', 'update', {
+        'status': 'active',
+        'updatedAt': _now,
+      }),
       FinanceWrite('loan_schedules/${loan.id}', 'create', {
         'loanId': loan.id,
         'borrowerId': uid,
@@ -860,6 +1235,11 @@ abstract final class LoanPlans {
         if (outstanding == 0) 'repaidAt': _now,
         'updatedAt': _now,
       }),
+      if (outstanding == 0)
+        FinanceWrite('loan_offers/${loan.id}', 'update', {
+          'status': 'repaid',
+          'updatedAt': _now,
+        }),
       if (installments != null && installments.isNotEmpty)
         FinanceWrite('loan_schedules/${loan.id}', 'update', {
           'installments': allocate(installments, amount, settled: outstanding == 0),
@@ -909,6 +1289,7 @@ abstract final class LoanPlans {
   /// The borrower withdraws the request (no money is committed yet).
   static List<FinanceWrite> cancel(Loan l) => [
         FinanceWrite(_loan(l.id), 'update', {'status': 'cancelled', 'cancelledAt': _now, 'updatedAt': _now}),
+        FinanceWrite('loan_offers/${l.id}', 'update', {'status': 'cancelled', 'updatedAt': _now}),
       ];
 }
 
@@ -922,6 +1303,9 @@ abstract final class LoanErrors {
     'loan_no_voters': 'Your group has no other member to vote on your request.',
     'agreement_outdated': 'The agreement changed. Please read the new version.',
     'nothing_to_collect': 'There is nothing to collect yet.',
+    'salary_cap_exceeded': 'The requested amount exceeds your salary cap (1/3 of confirmed salary).',
+    'guarantor_required': 'A guarantor is required for this loan request.',
+    'invite_self': 'You cannot select yourself as a guarantor.',
   };
 
   static String? message(String? reason) => messages[reason];

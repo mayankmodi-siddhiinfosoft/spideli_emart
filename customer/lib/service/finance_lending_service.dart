@@ -88,14 +88,48 @@ abstract final class FinanceLendingService {
   /// The user's profile (`users/{uid}`), for the restriction shown on the screens.
   static Stream<Map<String, dynamic>> profile() => FinanceService.myProfile();
 
+  /// Anonymous loan offers visible to members and the loan centre (`loan_offers/{loanId}`).
+  static Stream<List<LoanOffer>> loanOffers({String? groupId, bool publicOnly = false}) {
+    Query<Map<String, dynamic>> q = _db.collection('loan_offers');
+    if (publicOnly) {
+      q = q.where('visibility', isEqualTo: 'public');
+    } else if (groupId != null && groupId.isNotEmpty) {
+      q = q.where('groupId', isEqualTo: groupId);
+    }
+    return q.orderBy('createdAt', descending: true).limit(50).snapshots().map((s) => s.docs.map((d) => LoanOffer.fromMap({...d.data(), 'id': d.id}, FinanceGroupService.toDate)).toList());
+  }
+
+  /// Public requests in the Loan Centre (`loan_offers` where visibility == 'public').
+  static Stream<List<Loan>> loanCentreRequests() => loanOffers(publicOnly: true).map((list) => list.map((o) => o.toLoan()).toList());
+
+
+  /// Pending requests for the user to be a guarantor (`loan_applications`).
+  static Stream<List<Loan>> guarantorRequests() => _query(
+        _db.collection('loan_applications').where('guarantor.userId', isEqualTo: _uid).where('guarantor.status', isEqualTo: 'invited'),
+      );
+
+  /// The member's credit score (`credit_scores/{uid}`).
+  static Stream<CreditScore?> myCreditScore() => _db
+      .collection('credit_scores')
+      .doc(_uid)
+      .snapshots()
+      .map((s) => s.data() == null ? null : CreditScore.fromMap(s.data()!, FinanceGroupService.toDate));
+
+  /// Deadline extension requests for a loan (`loan_extension_requests`).
+  static Stream<List<LoanExtensionRequest>> loanExtensions(String loanId) => _db
+      .collection('loan_extension_requests')
+      .where('loanId', isEqualTo: loanId)
+      .snapshots()
+      .map((s) => s.docs.map((d) => LoanExtensionRequest.fromMap({...d.data(), 'id': d.id}, FinanceGroupService.toDate)).toList());
+
   // ── Steps ─────────────────────────────────────────────────────────────
 
   /// A new id for a request: kept by the screen, so a retry writes the same
   /// request (create-only) instead of a second one.
   static String newLoanId() => _db.collection('loan_applications').doc().id;
 
-  /// Creates the request [loanId] in the tontine [groupId] (the borrower is
-  /// one of its members; the others vote and may fund it).
+  /// Creates the request [loanId] in the tontine [groupId] or Loan Centre (`visibility: "public"`).
+  /// Writes BOTH `loan_applications/$loanId` AND the anonymous copy `loan_offers/$loanId` (spec section 4).
   static Future<void> apply({
     required String loanId,
     required LendingConfig config,
@@ -104,8 +138,15 @@ abstract final class FinanceLendingService {
     required String purpose,
     required int durationMonths,
     required String repaymentFrequency,
-    required String groupId,
+    String? groupId,
     required String description,
+    String visibility = 'group',
+    bool anonymous = true,
+    double interestPercent = 0.0,
+    int? salaryCap,
+    String? guarantorUserId,
+    String? liablePartyId,
+    String? scoreBand,
   }) => _guard(() async {
     final String uid = _signedIn();
     // A retry after a lost answer: the request is there already.
@@ -114,9 +155,17 @@ abstract final class FinanceLendingService {
       if (existing['borrowerId'] == uid) return;
       throw const FinanceException('state_changed');
     }
-    final group = (await _db.collection('tontines').doc(groupId).get()).data();
-    if (group == null) throw const FinanceException('state_changed');
-    final members = _strings(group['memberIds']);
+    final bool isPublic = visibility == 'public';
+    Map<String, dynamic>? group;
+    List<String> members = const [];
+    if (!isPublic && (groupId != null && groupId.isNotEmpty)) {
+      group = (await _db.collection('tontines').doc(groupId).get()).data();
+      if (group == null) throw const FinanceException('state_changed');
+      members = _strings(group['memberIds']);
+    }
+    final bool guarantorReq = isPublic
+        ? config.loanCentreGuarantorRequired
+        : (config.groupGuarantorRequired || (guarantorUserId != null && guarantorUserId.isNotEmpty));
     final String? problem = LoanChecks.apply(
       config: config,
       uid: uid,
@@ -126,6 +175,10 @@ abstract final class FinanceLendingService {
       durationMonths: durationMonths,
       frequency: repaymentFrequency,
       restricted: await _restricted(),
+      salaryCap: salaryCap,
+      guarantorRequired: guarantorReq,
+      guarantorUserId: guarantorUserId,
+      isPublic: isPublic,
     );
     if (problem != null) throw FinanceException(problem);
     final String regionId = await FinanceRegion.require();
@@ -135,8 +188,8 @@ abstract final class FinanceLendingService {
       LoanPlans.apply(
         loanId: loanId,
         uid: uid,
-        groupId: groupId,
-        groupName: group['name']?.toString() ?? '',
+        groupId: groupId ?? '',
+        groupName: group?['name']?.toString() ?? (isPublic ? 'Loan Centre' : ''),
         memberIds: members,
         amount: amount,
         currency: currency,
@@ -144,9 +197,78 @@ abstract final class FinanceLendingService {
         durationMonths: durationMonths,
         repaymentFrequency: repaymentFrequency,
         description: description,
+        visibility: visibility,
+        anonymous: anonymous,
+        interestPercent: interestPercent,
+        salaryCap: salaryCap,
+        guarantorUserId: guarantorUserId,
+        liablePartyId: liablePartyId,
+        scoreBand: scoreBand,
       ),
       regionId,
     ));
+    if (guarantorUserId != null && guarantorUserId.isNotEmpty) {
+      unawaited(_notify('loan_guarantor_request', [guarantorUserId], Loan(
+        id: loanId,
+        borrowerId: uid,
+        groupId: groupId ?? '',
+        groupName: group?['name']?.toString() ?? '',
+        amount: amount,
+        currency: currency,
+        purpose: purpose,
+        durationMonths: durationMonths,
+        frequency: repaymentFrequency,
+        status: 'guarantor_pending',
+      ), {
+        'amount': FinanceMoney.format(amount, currency),
+        'borrowerName': anonymous ? 'A member' : await _name(uid),
+      }));
+    }
+  });
+
+  /// The guarantor responds to a guarantee request (accept or decline).
+  static Future<void> respondGuarantor(String loanId, bool accept) => _guard(() async {
+    final String uid = _signedIn();
+    final loan = await _loanOnce(loanId);
+    if (loan == null) throw const FinanceException('state_changed');
+    if (loan.guarantor?.userId != uid || loan.guarantor?.status != 'invited') throw const FinanceException('permission_denied');
+    await _commit(FinanceRegion.stamp(LoanPlans.respondGuarantor(loanId, uid, accept), _regionOf(loan)));
+    unawaited(_notify(accept ? 'loan_guarantor_accepted' : 'loan_guarantor_declined', [loan.borrowerId], loan, {
+      'guarantorName': await _name(uid),
+      'amount': FinanceMoney.format(loan.amount, loan.currency),
+    }));
+  });
+
+  /// Borrower requests a deadline extension for an installment (spec section 8).
+  static Future<void> requestExtension({
+    required String loanId,
+    required int installmentNumber,
+    required int requestedDays,
+    required String reason,
+    double extraInterestPercent = 0.0,
+  }) => _guard(() async {
+    final String uid = _signedIn();
+    final loan = await _loanOnce(loanId);
+    if (loan == null) throw const FinanceException('state_changed');
+    if (loan.borrowerId != uid) throw const FinanceException('permission_denied');
+    final String extensionId = _db.collection('loan_extension_requests').doc().id;
+    await _commit(FinanceRegion.stamp(
+      LoanPlans.requestExtension(
+        extensionId: extensionId,
+        loanId: loanId,
+        borrowerId: uid,
+        installmentNumber: installmentNumber,
+        requestedDays: requestedDays,
+        reason: reason,
+        extraInterestPercent: extraInterestPercent,
+      ),
+      _regionOf(loan),
+    ));
+    unawaited(_notify('loan_extension_requested', [loan.borrowerId], loan, {
+      'amount': FinanceMoney.format(loan.amount, loan.currency),
+      'installment': installmentNumber.toString(),
+      'days': requestedDays.toString(),
+    }));
   });
 
   /// Uploads a supporting photo to `loan_documents/{uid}/{loanId}/` (never

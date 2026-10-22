@@ -27,9 +27,11 @@ class _BusinessAccountScreenState extends State<BusinessAccountScreen> {
   bool _loading = true;
   bool _editing = false;
   Map<String, dynamic>? _profile;
+  String _kind = BusinessAccount.kindCompany;
   final _company = TextEditingController();
   final _registration = TextEditingController();
   File? _document;
+  File? _statutesDocument;
 
   @override
   void initState() {
@@ -50,6 +52,7 @@ class _BusinessAccountScreenState extends State<BusinessAccountScreen> {
     } catch (e) {
       _profile = BusinessAccount.profile;
     }
+    _kind = _profile?['kind']?.toString() ?? BusinessAccount.kindCompany;
     _company.text = _profile?['companyName']?.toString() ?? '';
     _registration.text = _profile?['registrationNumber']?.toString() ?? '';
     _editing = _profile == null;
@@ -61,9 +64,15 @@ class _BusinessAccountScreenState extends State<BusinessAccountScreen> {
     if (picked != null) setState(() => _document = File(picked.path));
   }
 
+  Future<void> _pickStatutesDocument(ImageSource source) async {
+    final picked = await ImagePicker().pickImage(source: source, imageQuality: 80);
+    if (picked != null) setState(() => _statutesDocument = File(picked.path));
+  }
+
   Future<void> _submit() async {
+    final isAssoc = _kind == BusinessAccount.kindAssociation;
     if (_company.text.trim().isEmpty || _registration.text.trim().isEmpty) {
-      ShowToastDialog.showToast("Please enter the company name and registration number".tr);
+      ShowToastDialog.showToast(isAssoc ? "Please enter the association name and registration number".tr : "Please enter the company name and registration number".tr);
       return;
     }
     if (_document == null) {
@@ -73,10 +82,24 @@ class _BusinessAccountScreenState extends State<BusinessAccountScreen> {
     ShowToastDialog.showLoader("Please wait...".tr);
     try {
       final url = await BusinessAccount.uploadDocument(_document!);
-      await BusinessAccount.submit(companyName: _company.text.trim(), registrationNumber: _registration.text.trim(), documentUrl: url);
+      List<Map<String, dynamic>>? docs;
+      if (isAssoc && _statutesDocument != null) {
+        final statutesUrl = await BusinessAccount.uploadDocument(_statutesDocument!, prefix: 'association_documents');
+        docs = [
+          {'type': 'statutes', 'url': statutesUrl, 'status': 'uploaded'}
+        ];
+      }
+      await BusinessAccount.submit(
+        companyName: _company.text.trim(),
+        registrationNumber: _registration.text.trim(),
+        documentUrl: url,
+        kind: _kind,
+        documents: docs,
+      );
       ShowToastDialog.closeLoader();
       ShowToastDialog.showToast("Request sent. We will review it shortly.".tr);
       _document = null;
+      _statutesDocument = null;
       await _load();
     } catch (e) {
       ShowToastDialog.closeLoader();
@@ -143,7 +166,10 @@ class _BusinessAccountScreenState extends State<BusinessAccountScreen> {
       tone = DsTone.warning;
       icon = Icons.hourglass_top_rounded;
     }
+    final kind = _profile?['kind']?.toString() ?? BusinessAccount.kindCompany;
+    final isAssoc = kind == BusinessAccount.kindAssociation;
     final docUrl = _profile?['documentUrl']?.toString() ?? '';
+    final docs = _profile?['documents'] is List ? (_profile!['documents'] as List).whereType<Map>().toList() : const [];
     return SubUi.card(
       context,
       tone: tone,
@@ -155,7 +181,15 @@ class _BusinessAccountScreenState extends State<BusinessAccountScreen> {
             children: [
               DsIconWell(icon: icon, tone: tone, size: 44),
               const DsGap(DsSpace.md),
-              Expanded(child: SubUi.title(context, _profile?['companyName']?.toString() ?? '-')),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SubUi.title(context, _profile?['companyName']?.toString() ?? '-'),
+                    Text(isAssoc ? "Association".tr : "Company".tr, style: DsTypography.caption.copyWith(color: DsColors.of(context).textSecondary)),
+                  ],
+                ),
+              ),
               const DsGap(DsSpace.sm),
               chip,
             ],
@@ -170,6 +204,18 @@ class _BusinessAccountScreenState extends State<BusinessAccountScreen> {
               padding: const EdgeInsets.only(top: DsSpace.md),
               child: ClipRRect(borderRadius: DsRadius.brMd, child: NetworkImageWidget(imageUrl: docUrl, height: 130, width: double.infinity, fit: BoxFit.cover)),
             ),
+          for (final doc in docs)
+            if (doc['url'] != null && doc['url'].toString().isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: DsSpace.sm),
+                child: Row(
+                  children: [
+                    const Icon(Icons.attachment_rounded, size: 16),
+                    const DsGap(DsSpace.xs),
+                    Text(doc['type']?.toString() == 'statutes' ? "Statutes".tr : "Document".tr, style: DsTypography.caption),
+                  ],
+                ),
+              ),
           if (!_editing && status == BusinessAccount.statusRejected)
             Padding(
               padding: const EdgeInsets.only(top: DsSpace.sm),
@@ -185,12 +231,30 @@ class _BusinessAccountScreenState extends State<BusinessAccountScreen> {
 
   List<Widget> _form(BuildContext context) {
     final c = DsColors.of(context);
+    final isAssoc = _kind == BusinessAccount.kindAssociation;
     return [
       DsFormSection(
-        title: "Business account".tr,
+        title: "Account kind".tr,
+        icon: Icons.domain_outlined,
+        children: [
+          DsSegmentedTabs(
+            segments: [DsSegment("Company".tr), DsSegment("Association".tr)],
+            index: isAssoc ? 1 : 0,
+            onChanged: (i) => setState(() => _kind = i == 1 ? BusinessAccount.kindAssociation : BusinessAccount.kindCompany),
+          ),
+        ],
+      ),
+      DsFormSection(
+        title: isAssoc ? "Association details".tr : "Company details".tr,
         icon: Icons.badge_outlined,
         children: [
-          DsTextField(label: "Company name".tr, hint: "Company name".tr, controller: _company, requiredMark: true, textCapitalization: TextCapitalization.words),
+          DsTextField(
+            label: isAssoc ? "Association name".tr : "Company name".tr,
+            hint: isAssoc ? "Association name".tr : "Company name".tr,
+            controller: _company,
+            requiredMark: true,
+            textCapitalization: TextCapitalization.words,
+          ),
           DsTextField(label: "Registration number".tr, hint: "Registration number".tr, controller: _registration, requiredMark: true, bottomSpacing: 0),
         ],
       ),
@@ -231,6 +295,44 @@ class _BusinessAccountScreenState extends State<BusinessAccountScreen> {
           ),
         ],
       ),
+      if (isAssoc)
+        DsFormSection(
+          title: "Association statutes".tr,
+          icon: Icons.article_outlined,
+          children: [
+            if (_statutesDocument != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: DsSpace.md),
+                child: ClipRRect(borderRadius: DsRadius.brMd, child: Image.file(_statutesDocument!, height: 170, width: double.infinity, fit: BoxFit.cover)),
+              )
+            else
+              Container(
+                height: 100,
+                margin: const EdgeInsets.only(bottom: DsSpace.md),
+                decoration: BoxDecoration(
+                  color: c.surfaceAlt,
+                  borderRadius: DsRadius.brMd,
+                  border: Border.all(color: c.border),
+                ),
+                alignment: Alignment.center,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.upload_file_outlined, color: c.textMuted, size: 26),
+                    const DsGap(DsSpace.sm),
+                    Text("Add association statutes (optional)".tr, textAlign: TextAlign.center, style: DsTypography.caption.copyWith(color: c.textMuted)),
+                  ],
+                ),
+              ),
+            Row(
+              children: [
+                Expanded(child: DsButton.secondary(label: "Camera".tr, icon: Icons.photo_camera_outlined, onPressed: () => _pickStatutesDocument(ImageSource.camera))),
+                const DsGap(DsSpace.md),
+                Expanded(child: DsButton.secondary(label: "Gallery".tr, icon: Icons.photo_library_outlined, onPressed: () => _pickStatutesDocument(ImageSource.gallery))),
+              ],
+            ),
+          ],
+        ),
     ];
   }
 }

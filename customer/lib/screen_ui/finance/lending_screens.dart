@@ -114,7 +114,7 @@ class LoansScreen extends StatefulWidget {
 }
 
 class _LoansScreenState extends State<LoansScreen> {
-  late int _tab = widget.initialTab.clamp(0, 2);
+  late int _tab = widget.initialTab.clamp(0, 3);
 
   @override
   Widget build(BuildContext context) {
@@ -145,9 +145,16 @@ class _LoansScreenState extends State<LoansScreen> {
                 placeholder
               else ...[
                 const _RestrictionNotice(),
+                const _GuarantorRequestsBanner(),
+                const _MyCreditScoreCard(),
                 DsSegmentedTabs(
                   scrollable: true,
-                  segments: [DsSegment("Borrow".tr), DsSegment("Group requests".tr), DsSegment("Lent".tr)],
+                  segments: [
+                    DsSegment("Borrow".tr),
+                    DsSegment("Group requests".tr),
+                    DsSegment("Loan Centre".tr),
+                    DsSegment("Lent".tr),
+                  ],
                   index: _tab,
                   onChanged: (i) => setState(() => _tab = i),
                 ),
@@ -156,12 +163,14 @@ class _LoansScreenState extends State<LoansScreen> {
                   load: switch (_tab) {
                     0 => FinanceLendingService.borrowed,
                     1 => FinanceLendingService.groupRequests,
+                    2 => FinanceLendingService.loanCentreRequests,
                     _ => FinanceLendingService.lent,
                   },
-                  lent: _tab == 2,
+                  lent: _tab == 3,
                   empty: switch (_tab) {
                     0 => "You have no loan request.",
                     1 => "No loan request in your groups.",
+                    2 => "No active loan requests in the Loan Centre.",
                     _ => "You have not funded a loan yet.",
                   },
                 ),
@@ -298,11 +307,20 @@ class _LoanApplyScreenState extends State<LoanApplyScreen> {
 
   final _amount = TextEditingController();
   final _description = TextEditingController();
+  final _guarantorEmail = TextEditingController();
   late String _currency = widget.config.currencies.first;
   late String _purpose = widget.config.purposes.first;
   late int _months = widget.config.durationsMonths.first;
   late String _frequency = widget.config.repaymentFrequencies.first;
+  String _destination = 'group'; // 'group' | 'loan_centre'
   String? _groupId;
+  bool _anonymous = true;
+  String? _guarantorUserId;
+  FinancePerson? _guarantorPerson;
+  bool _searchingGuarantor = false;
+  String? _guarantorError;
+  int? _salaryCap;
+  bool _guarantorRequired = false;
   bool _showSchedule = false;
   final List<_Doc> _documents = [];
   late Stream<List<Tontine>> _groups = FinanceGroupService.myTontines();
@@ -325,20 +343,59 @@ class _LoanApplyScreenState extends State<LoanApplyScreen> {
   void dispose() {
     _amount.dispose();
     _description.dispose();
+    _guarantorEmail.dispose();
     super.dispose();
   }
 
   /// The amount, when valid and within the configured limits.
   int? get _validAmount {
     final int? v = FinanceAmount.parse(_amount.text, _currency);
-    final int? max = widget.config.maxFor(_currency);
+    final int? max = _destination == 'loan_centre' && widget.config.loanCentreMaxAmount.containsKey(_currency)
+        ? widget.config.loanCentreMaxAmount[_currency]
+        : widget.config.maxFor(_currency);
     return v == null || v < widget.config.minFor(_currency) || (max != null && v > max) ? null : v;
   }
 
   List<String> _missing() => [
-        if (_groupId == null || _alone) "Group".tr,
+        if (_destination == 'group' && (_groupId == null || _alone)) "Group".tr,
         if (_validAmount == null) "Amount".tr,
+        if (_guarantorRequired && (_guarantorUserId == null || _guarantorUserId!.isEmpty)) "Guarantor".tr,
+        if (_salaryCap != null && _validAmount != null && _validAmount! > _salaryCap!) "Amount exceeds salary cap (⅓)".tr,
       ];
+
+  Future<void> _lookupGuarantor() async {
+    final email = _guarantorEmail.text.trim();
+    if (email.isEmpty) return;
+    setState(() {
+      _searchingGuarantor = true;
+      _guarantorError = null;
+    });
+    try {
+      final p = await FinancePeople.byEmail(email);
+      if (!mounted) return;
+      if (p == null) {
+        setState(() {
+          _guarantorPerson = null;
+          _guarantorUserId = null;
+          _guarantorError = "No user found with this email.";
+        });
+      } else if (p.uid == FinanceService.uid) {
+        setState(() {
+          _guarantorPerson = null;
+          _guarantorUserId = null;
+          _guarantorError = "You cannot be your own guarantor.";
+        });
+      } else {
+        setState(() {
+          _guarantorPerson = p;
+          _guarantorUserId = p.uid;
+          _guarantorError = null;
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _searchingGuarantor = false);
+    }
+  }
 
   Future<void> _addDocument(ImageSource source) async {
     try {
@@ -372,8 +429,12 @@ class _LoanApplyScreenState extends State<LoanApplyScreen> {
             purpose: _purpose,
             durationMonths: _months,
             repaymentFrequency: _frequency,
-            groupId: _groupId!,
+            groupId: _destination == 'group' ? _groupId : null,
             description: _description.text.trim(),
+            visibility: _destination == 'loan_centre' ? 'public' : 'group',
+            anonymous: _anonymous,
+            salaryCap: _salaryCap,
+            guarantorUserId: _guarantorUserId,
           ));
       _applying = false;
       if (!ok || !mounted) return;
@@ -491,10 +552,59 @@ class _LoanApplyScreenState extends State<LoanApplyScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   _groupSection(),
+                  if (_destination == 'loan_centre' || _guarantorRequired)
+                    FinSection(
+                      title: "Guarantor".tr,
+                      padding: _formPadding,
+                      children: [
+                        _Hint("A guarantor is required. An invitation will be sent to confirm their guarantee.".tr),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: DsTextField(
+                                label: "Guarantor Spideli Email".tr,
+                                controller: _guarantorEmail,
+                                requiredMark: true,
+                                keyboardType: TextInputType.emailAddress,
+                              ),
+                            ),
+                            const DsGap(DsSpace.sm),
+                            Padding(
+                              padding: const EdgeInsets.only(top: 8.0),
+                              child: DsButton.secondary(
+                                label: "Verify".tr,
+                                size: DsButtonSize.md,
+                                loading: _searchingGuarantor,
+                                onPressed: _lookupGuarantor,
+                              ),
+                            ),
+                          ],
+                        ),
+                        if (_guarantorPerson != null)
+                          FinListTile(
+                            icon: Icons.verified_user_outlined,
+                            iconTone: DsTone.success,
+                            title: _guarantorPerson!.name,
+                            subtitle: _guarantorPerson!.email,
+                            status: 'completed',
+                            statusLabel: "Verified".tr,
+                          ),
+                        if (_guarantorError != null)
+                          DsInlineAlert(tone: DsTone.danger, message: _guarantorError!.tr),
+                      ],
+                    ),
                   FinSection(
                     title: "Loan".tr,
                     padding: _formPadding,
                     children: [
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: Text("Anonymous Request".tr, style: DsTypography.bodyStrong),
+                        subtitle: Text("Hide your name and account identity from other members and voters.".tr, style: DsTypography.caption),
+                        value: _anonymous,
+                        onChanged: (v) => setState(() => _anonymous = v),
+                      ),
+                      const DsGap(DsSpace.sm),
                       FinAmountField(
                         label: "Amount".tr,
                         controller: _amount,
@@ -503,7 +613,9 @@ class _LoanApplyScreenState extends State<LoanApplyScreen> {
                         onCurrencyChanged: (v) => setState(() => _currency = v),
                         // The allowed range, before the user is refused.
                         min: cfg.minFor(_currency),
-                        max: cfg.maxFor(_currency),
+                        max: _destination == 'loan_centre' && cfg.loanCentreMaxAmount.containsKey(_currency)
+                            ? cfg.loanCentreMaxAmount[_currency]
+                            : cfg.maxFor(_currency),
                         onChanged: (_) => setState(() {}),
                       ),
                       DsDropdown<String>(
@@ -602,54 +714,106 @@ class _LoanApplyScreenState extends State<LoanApplyScreen> {
   /// The group whose members vote: loading, failed (Retry), none (go to the
   /// tontines), or the choice.
   Widget _groupSection() {
-    return StreamBuilder<List<Tontine>>(
-      stream: _groups,
-      builder: (context, snap) {
-        final groups = (snap.data ?? const <Tontine>[]).where((t) => t.isActive || t.isForming).toList();
-        final Widget field;
-        if (snap.hasError) {
-          field = DsInlineAlert(
-            tone: DsTone.danger,
-            message: "Could not load your groups.".tr,
-            actionLabel: "Try again".tr,
-            onAction: () => setState(() => _groups = FinanceGroupService.myTontines()),
-          );
-        } else if (!snap.hasData) {
-          field = DsDropdown<String>(label: "Group".tr, requiredMark: true, hint: "Loading your groups...".tr, value: null, items: const [], onChanged: null, bottomSpacing: 0);
-        } else if (groups.isEmpty) {
-          field = DsInlineAlert(
-            tone: DsTone.warning,
-            message: "You need to belong to a tontine group to borrow from its members.".tr,
-            actionLabel: "Open tontines".tr,
-            onAction: () => Get.to(() => const TontineListScreen()),
-          );
-        } else {
-          field = Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              FinPickerField<String>(
-                label: "Group".tr,
-                requiredMark: true,
-                value: _groupId,
-                options: [for (final g in groups) (g.id, g.name)],
-                onChanged: (v) => setState(() {
-                  _groupId = v;
-                  // Nobody else in it: nobody to vote on the request.
-                  final picked = groups.where((g) => g.id == v);
-                  _alone = picked.isNotEmpty && LoanPlans.voters(picked.first.memberIds, FinanceService.uid).isEmpty;
+    return FinSection(
+      title: "Destination".tr,
+      top: 0,
+      padding: _formPadding,
+      children: [
+        DsFieldLabel("Where to request this loan".tr, required: true),
+        Wrap(
+          spacing: DsSpace.sm,
+          runSpacing: DsSpace.xs,
+          children: [
+            ChoiceChip(
+              label: Text("Tontine Group".tr),
+              selected: _destination == 'group',
+              onSelected: (_) => setState(() {
+                _destination = 'group';
+                _salaryCap = null;
+              }),
+            ),
+            if (widget.config.loanCentreEnabled)
+              ChoiceChip(
+                label: Text("Loan Centre (Public)".tr),
+                selected: _destination == 'loan_centre',
+                onSelected: (_) => setState(() {
+                  _destination = 'loan_centre';
+                  _groupId = null;
+                  _alone = false;
+                  _salaryCap = null;
+                  _guarantorRequired = widget.config.loanCentreGuarantorRequired;
                 }),
               ),
-              if (_alone) DsInlineAlert(tone: DsTone.warning, message: "Your group has no other member to vote on your request.".tr),
-            ],
-          );
-        }
-        return FinSection(
-          title: "Group".tr,
-          top: 0,
-          padding: _formPadding,
-          children: [_Hint("The members of this group vote on your request and can fund it.".tr), field],
-        );
-      },
+          ],
+        ),
+        const DsGap(DsSpace.md),
+        if (_destination == 'loan_centre')
+          _Hint("Requests in the Loan Centre are open to all platform members and require a guarantor.".tr)
+        else
+          StreamBuilder<List<Tontine>>(
+            stream: _groups,
+            builder: (context, snap) {
+              final groups = (snap.data ?? const <Tontine>[]).where((t) => t.isActive || t.isForming).toList();
+              if (snap.hasError) {
+                return DsInlineAlert(
+                  tone: DsTone.danger,
+                  message: "Could not load your groups.".tr,
+                  actionLabel: "Try again".tr,
+                  onAction: () => setState(() => _groups = FinanceGroupService.myTontines()),
+                );
+              }
+              if (!snap.hasData) {
+                return DsDropdown<String>(label: "Group".tr, requiredMark: true, hint: "Loading your groups...".tr, value: null, items: const [], onChanged: null, bottomSpacing: 0);
+              }
+              if (groups.isEmpty) {
+                return DsInlineAlert(
+                  tone: DsTone.warning,
+                  message: "You need to belong to a tontine group to borrow from its members.".tr,
+                  actionLabel: "Open tontines".tr,
+                  onAction: () => Get.to(() => const TontineListScreen()),
+                );
+              }
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  FinPickerField<String>(
+                    label: "Group".tr,
+                    requiredMark: true,
+                    value: _groupId,
+                    options: [for (final g in groups) (g.id, '${g.name} (${g.typeLabel.tr})')],
+                    onChanged: (v) async {
+                      setState(() {
+                        _groupId = v;
+                        final picked = groups.where((g) => g.id == v);
+                        _alone = picked.isNotEmpty && LoanPlans.voters(picked.first.memberIds, FinanceService.uid).isEmpty;
+                        if (picked.isNotEmpty) {
+                          final g = picked.first;
+                          _guarantorRequired = g.isGroup;
+                        }
+                      });
+                      if (v != null) {
+                        final picked = groups.where((g) => g.id == v).firstOrNull;
+                        if (picked != null && picked.isProfessional) {
+                          final sal = await FinanceGroupService.mySalary(v).first;
+                          if (sal != null && sal.isConfirmed) {
+                            setState(() => _salaryCap = sal.loanCap);
+                          }
+                        }
+                      }
+                    },
+                  ),
+                  if (_alone) DsInlineAlert(tone: DsTone.warning, message: "Your group has no other member to vote on your request.".tr),
+                  if (_salaryCap != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: DsSpace.sm),
+                      child: Text("Professional tontine salary cap: ⅓ of salary (${FinanceMoney.format(_salaryCap!, _currency)})".tr,
+                          style: DsTypography.caption.copyWith(color: DsColors.of(context).primary)),
+                    ),
+                ],
+              );
+            },
+          ),
+      ],
     );
   }
 }
@@ -1253,22 +1417,24 @@ class _Schedule extends StatelessWidget {
     return FinSection(
       title: "Repayment schedule".tr,
       divided: true,
-      children: [for (final i in installments) _InstallmentRow(installment: i, currency: loan.currency)],
+      children: [for (final i in installments) _InstallmentRow(loan: loan, installment: i, currency: loan.currency)],
     );
   }
 }
 
 class _InstallmentRow extends StatelessWidget {
+  final Loan loan;
   final Map<String, dynamic> installment;
   final String currency;
 
-  const _InstallmentRow({required this.installment, required this.currency});
+  const _InstallmentRow({required this.loan, required this.installment, required this.currency});
 
   @override
   Widget build(BuildContext context) {
     final c = DsColors.of(context);
     final i = installment;
     final String? status = i['status']?.toString();
+    final bool canRequestExtension = loan.borrowerId == FinanceService.uid && (status == 'upcoming' || status == 'overdue');
     return MergeSemantics(
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: DsSpace.md),
@@ -1287,7 +1453,20 @@ class _InstallmentRow extends StatelessWidget {
               children: [
                 Text(FinanceMoney.format(FinanceSummary.intOf(i['amount']), currency), style: DsTypography.bodyStrong.copyWith(color: c.textPrimary).tabular),
                 const DsGap(DsSpace.xxs),
-                FinStatusChip(status: status ?? '', label: LoanActions.installmentLabel(status).tr),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (canRequestExtension) ...[
+                      DsButton.ghost(
+                        label: "Extend".tr,
+                        size: DsButtonSize.sm,
+                        onPressed: () => _showExtensionDialog(context, loan, i),
+                      ),
+                      const DsGap(DsSpace.xs),
+                    ],
+                    FinStatusChip(status: status ?? '', label: LoanActions.installmentLabel(status).tr),
+                  ],
+                ),
               ],
             ),
           ],
@@ -1473,4 +1652,220 @@ class _Toggle extends StatelessWidget {
       ),
     );
   }
+}
+
+class _GuarantorRequestsBanner extends StatelessWidget {
+  const _GuarantorRequestsBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<List<Loan>>(
+      stream: FinanceLendingService.guarantorRequests(),
+      builder: (context, snap) {
+        final requests = snap.data ?? const [];
+        if (requests.isEmpty) return const SizedBox.shrink();
+        return Padding(
+          padding: const EdgeInsets.only(bottom: DsSpace.md),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              for (final r in requests)
+                DsInlineAlert(
+                  tone: DsTone.warning,
+                  title: "Guarantor Request".tr,
+                  message: "You were invited as a guarantor for a loan of @amount.".trParams({
+                    'amount': FinanceMoney.format(r.amount, r.currency),
+                  }),
+                  actionLabel: "Respond".tr,
+                  onAction: () => _showGuarantorResponseDialog(context, r),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  static void _showGuarantorResponseDialog(BuildContext context, Loan loan) {
+    Get.dialog(
+      AlertDialog(
+        title: Text("Guarantor Request".tr),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text("You have been requested to guarantee this loan:".tr, style: DsTypography.bodySm),
+            const DsGap(DsSpace.sm),
+            Text("Amount: @amount".trParams({'amount': FinanceMoney.format(loan.amount, loan.currency)}), style: DsTypography.bodyStrong),
+            Text("Purpose: @purpose".trParams({'purpose': GroupLabels.purpose(loan.purpose).tr}), style: DsTypography.body),
+            const DsGap(DsSpace.md),
+            Text("Important: As a guarantor, you may be held liable to repay the outstanding debt if the borrower defaults.".tr,
+                style: DsTypography.caption.copyWith(color: Colors.red)),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              Get.back();
+              await FinanceUi.run(
+                () => FinanceLendingService.respondGuarantor(loan.id, false),
+                success: "Guarantor request declined".tr,
+              );
+            },
+            child: Text("Decline".tr, style: const TextStyle(color: Colors.red)),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Get.back();
+              await FinanceUi.run(
+                () => FinanceLendingService.respondGuarantor(loan.id, true),
+                success: "Guarantor request accepted".tr,
+              );
+            },
+            child: Text("Accept & Guarantee".tr),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MyCreditScoreCard extends StatelessWidget {
+  const _MyCreditScoreCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<CreditScore?>(
+      stream: FinanceLendingService.myCreditScore(),
+      builder: (context, snap) {
+        final score = snap.data;
+        if (score == null) return const SizedBox.shrink();
+        final c = DsColors.of(context);
+        return Padding(
+          padding: const EdgeInsets.only(bottom: DsSpace.md),
+          child: Container(
+            padding: const EdgeInsets.all(DsSpace.md),
+            decoration: BoxDecoration(
+              color: c.surface,
+              borderRadius: BorderRadius.circular(DsRadius.md),
+              border: Border.all(color: c.borderSubtle),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text("Credit Score".tr, style: DsTypography.bodyStrong.copyWith(color: c.textPrimary)),
+                    FinStatusChip(
+                      status: score.isGood ? 'completed' : (score.isFair ? 'neutral' : 'restricted'),
+                      label: score.bandLabel.tr,
+                    ),
+                  ],
+                ),
+                const DsGap(DsSpace.xs),
+                Row(
+                  children: [
+                    Text('${score.score}', style: DsTypography.h2.copyWith(color: c.textPrimary).tabular),
+                    Text(' / 850', style: DsTypography.bodySm.copyWith(color: c.textSecondary)),
+                  ],
+                ),
+                if (score.factors.isNotEmpty) ...[
+                  const DsGap(DsSpace.xs),
+                  for (final f in score.factors)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: DsSpace.xxs),
+                      child: Row(
+                        children: [
+                          Icon(
+                            f.isPositive ? Icons.check_circle_outline_rounded : Icons.info_outline_rounded,
+                            size: 14,
+                            color: f.isPositive ? c.success : c.warning,
+                          ),
+                          const DsGap(DsSpace.xs),
+                          Expanded(
+                            child: Text(
+                              '${f.label}${f.detail != null ? ' · ${f.detail}' : ''}',
+                              style: DsTypography.caption.copyWith(color: c.textSecondary),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+void _showExtensionDialog(BuildContext context, Loan loan, Map<String, dynamic> installment) {
+  int days = 14;
+  final reasonCtrl = TextEditingController();
+  final int number = FinanceSummary.intOf(installment['number']);
+
+  Get.dialog(
+    StatefulBuilder(
+      builder: (context, setDialogState) {
+        return AlertDialog(
+          title: Text("Request Deadline Extension".tr),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text("Installment #@num (@amount)".trParams({
+                'num': '$number',
+                'amount': FinanceMoney.format(FinanceSummary.intOf(installment['amount']), loan.currency),
+              }), style: DsTypography.bodyStrong),
+              const DsGap(DsSpace.md),
+              DsFieldLabel("Extension Duration".tr),
+              Wrap(
+                spacing: DsSpace.sm,
+                children: [
+                  for (final d in [7, 14, 30])
+                    ChoiceChip(
+                      label: Text("@d days".trParams({'d': '$d'})),
+                      selected: days == d,
+                      onSelected: (_) => setDialogState(() => days = d),
+                    ),
+                ],
+              ),
+              const DsGap(DsSpace.md),
+              DsTextField(
+                label: "Reason for extension".tr,
+                controller: reasonCtrl,
+                maxLines: 2,
+                requiredMark: true,
+              ),
+              const DsGap(DsSpace.xs),
+              Text("Note: Extension requests are reviewed by administration and may carry additional interest.".tr,
+                  style: DsTypography.caption.copyWith(color: DsColors.of(context).textSecondary)),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Get.back(), child: Text("Cancel".tr)),
+            TextButton(
+              onPressed: () async {
+                if (reasonCtrl.text.trim().isEmpty) return;
+                Get.back();
+                await FinanceUi.run(
+                  () => FinanceLendingService.requestExtension(
+                    loanId: loan.id,
+                    installmentNumber: number,
+                    requestedDays: days,
+                    reason: reasonCtrl.text.trim(),
+                  ),
+                  success: "Extension request submitted".tr,
+                );
+              },
+              child: Text("Submit Request".tr),
+            ),
+          ],
+        );
+      },
+    ),
+  );
 }

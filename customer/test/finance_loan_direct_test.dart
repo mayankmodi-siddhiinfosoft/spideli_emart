@@ -78,10 +78,10 @@ void main() {
         repaymentFrequency: 'monthly',
         description: 'Stock',
       );
-      expect(w, hasLength(1));
-      expect(w.single.path, 'loan_applications/l1');
-      expect(w.single.op, 'create');
-      final m = w.single.data;
+      expect(w, hasLength(2));
+      final app = w.firstWhere((x) => x.path == 'loan_applications/l1');
+      expect(app.op, 'create');
+      final m = app.data;
       expect(m['status'], 'submitted');
       expect(m['borrowerId'], 'b');
       expect(m['eligibleVoterIds'], ['m1', 'm2']);
@@ -91,6 +91,11 @@ void main() {
       expect(m['repaidAmount'], 0);
       expect(m['lenderIds'], isEmpty);
       expect(m['documents'], isEmpty);
+
+      final offer = w.firstWhere((x) => x.path == 'loan_offers/l1');
+      expect(offer.op, 'create');
+      expect(offer.data['status'], 'submitted');
+      expect(offer.data.containsKey('borrowerId'), isFalse);
     });
 
     test('checks: restricted, not a member, alone in the group, limits', () {
@@ -158,12 +163,13 @@ void main() {
     test('the outcome: funding with quorum and approval (whole numbers), else rejected for the vote', () {
       final approved = LoanPlans.closeVote(loan('voting', yes: 2), quorumPercent: 50, approvalPercent: 60);
       expect(approved.status, 'funding');
-      expect(approved.writes.single.data['status'], 'funding');
-      expect(approved.writes.single.data.containsKey('reason'), isFalse);
+      expect(approved.writes.firstWhere((x) => x.path.startsWith('loan_applications')).data['status'], 'funding');
+      expect(approved.writes.firstWhere((x) => x.path.startsWith('loan_offers')).data['status'], 'funding');
+      expect(approved.writes.firstWhere((x) => x.path.startsWith('loan_applications')).data.containsKey('reason'), isFalse);
       // 1 of 3 voted: below the quorum (100 < 150).
       final noQuorum = LoanPlans.closeVote(loan('voting', yes: 1), quorumPercent: 50, approvalPercent: 60);
       expect(noQuorum.status, 'rejected');
-      expect(noQuorum.writes.single.data['reason'], 'vote');
+      expect(noQuorum.writes.firstWhere((x) => x.path.startsWith('loan_applications')).data['reason'], 'vote');
       // 1 yes of 2 cast: 100 < 120.
       expect(LoanPlans.closeVote(loan('voting', yes: 1, no: 1), quorumPercent: 50, approvalPercent: 60).status, 'rejected');
       // 3 yes of 5 cast at exactly 60 %.
@@ -414,7 +420,8 @@ void main() {
     expect(LoanChecks.cancel(loan('voting'), 'm1'), 'state_changed');
     expect(LoanChecks.cancel(loan('funding'), 'b'), 'state_changed');
     final w = LoanPlans.cancel(loan('submitted'));
-    expect(w.single.data['status'], 'cancelled');
+    expect(w.firstWhere((x) => x.path.startsWith('loan_applications')).data['status'], 'cancelled');
+    expect(w.firstWhere((x) => x.path.startsWith('loan_offers')).data['status'], 'cancelled');
   });
 
   test('error messages for the new reasons', () {

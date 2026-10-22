@@ -107,6 +107,11 @@ class TontineConfig {
   final int maxMembers;
   final List<String> payoutOrderMethods;
   final List<String> paymentMethods;
+  final List<String> types;
+  final double salaryCapFraction;
+  final bool groupGuarantorRequired;
+  final double commissionContributionPercent;
+  final double commissionPayoutPercent;
 
   /// Minimum contribution per currency, minor units.
   final Map<String, int> minContribution;
@@ -119,6 +124,11 @@ class TontineConfig {
     required this.payoutOrderMethods,
     required this.paymentMethods,
     required this.minContribution,
+    this.types = const ['group', 'professional', 'association'],
+    this.salaryCapFraction = 0.3333,
+    this.groupGuarantorRequired = true,
+    this.commissionContributionPercent = 0.0,
+    this.commissionPayoutPercent = 0.0,
   });
 
   static TontineConfig? parse(Map<String, dynamic>? raw) {
@@ -130,6 +140,14 @@ class TontineConfig {
     final int max = _int(raw['maxMembers']);
     if (currencies.isEmpty || frequencies.isEmpty || methods.isEmpty || min < 2 || max < min) return null;
     final mc = raw['minContribution'];
+    final types = _strings(raw['types']).isEmpty ? const ['group', 'professional', 'association'] : _strings(raw['types']);
+    final pro = raw['professional'] is Map ? Map<String, dynamic>.from(raw['professional'] as Map) : const <String, dynamic>{};
+    final grp = raw['group'] is Map ? Map<String, dynamic>.from(raw['group'] as Map) : const <String, dynamic>{};
+    final com = raw['commission'] is Map ? Map<String, dynamic>.from(raw['commission'] as Map) : const <String, dynamic>{};
+    final double cap = pro['salaryCapFraction'] is num ? (pro['salaryCapFraction'] as num).toDouble() : 0.3333;
+    final bool grpGuarantor = grp['guarantorRequired'] != false;
+    final double comContrib = com['contributionPercent'] is num ? (com['contributionPercent'] as num).toDouble() : 0.0;
+    final double comPayout = com['payoutPercent'] is num ? (com['payoutPercent'] as num).toDouble() : 0.0;
     return TontineConfig(
       currencies: currencies,
       frequencies: frequencies,
@@ -138,6 +156,11 @@ class TontineConfig {
       payoutOrderMethods: _strings(raw['payoutOrderMethods']).isEmpty ? const ['fixed'] : _strings(raw['payoutOrderMethods']),
       paymentMethods: methods,
       minContribution: mc is Map ? {for (final e in mc.entries) e.key.toString(): _int(e.value)} : const {},
+      types: types,
+      salaryCapFraction: cap,
+      groupGuarantorRequired: grpGuarantor,
+      commissionContributionPercent: comContrib,
+      commissionPayoutPercent: comPayout,
     );
   }
 
@@ -283,6 +306,12 @@ class Tontine {
   /// The region it was created in (`regionId`): its tontine settings apply.
   final String regionId;
 
+  /// The type of tontine: "professional" | "association" | "group" (missing/default = "group").
+  final String type;
+
+  /// The company / association uid sponsoring this tontine (professional and association only).
+  final String? sponsorId;
+
   const Tontine({
     required this.id,
     required this.name,
@@ -300,6 +329,8 @@ class Tontine {
     required this.startDate,
     required this.nextDueAt,
     this.regionId = '',
+    this.type = 'group',
+    this.sponsorId,
   });
 
   static Tontine fromMap(Map<String, dynamic> m, DateTime? Function(dynamic) toDate) => Tontine(
@@ -319,9 +350,18 @@ class Tontine {
         startDate: toDate(m['startDate']),
         nextDueAt: toDate(m['nextDueAt']),
         regionId: m['regionId']?.toString() ?? '',
+        type: m['type']?.toString().isNotEmpty == true ? m['type']!.toString() : 'group',
+        sponsorId: m['sponsorId']?.toString(),
       );
 
   bool isAdmin(String uid) => adminIds.contains(uid);
+
+  /// In a professional tontine, the HR administrator is in adminIds but NOT in memberIds (does not contribute).
+  bool isHrAdmin(String uid) => isProfessional && adminIds.contains(uid) && !memberIds.contains(uid);
+
+  bool get isProfessional => type == 'professional';
+  bool get isAssociation => type == 'association';
+  bool get isGroup => type == 'group' || type.isEmpty;
 
   /// The pot's ledger account (`financial_accounts/tontine_{id}`).
   String get potAccountId => FinanceLedger.tontineAccountId(id);
@@ -350,6 +390,12 @@ class Tontine {
         'suspended': 'Suspended',
       }[s] ??
       (s ?? '-');
+
+  static String typeLabel(String? t) => switch (t) {
+        'professional' => 'Professional',
+        'association' => 'Association',
+        _ => 'Group',
+      };
 }
 
 /// Admin actions the app offers (the security rules re-check every one).
@@ -884,9 +930,9 @@ abstract final class TontineWrites {
 
   // ── Plans ─────────────────────────────────────────────────────────────
 
-  /// The tontine (`forming`; the creator is its admin and first member),
-  /// the creator's member document (admin, active, position 1) and the
-  /// empty pot account `tontine_{tontineId}`.
+  /// The tontine (`forming`; the creator is its admin; in a professional tontine,
+  /// the HR admin is in adminIds but not in memberIds; otherwise admin and first member),
+  /// the creator's member document and the empty pot account `tontine_{tontineId}`.
   static List<FinanceWrite> create({
     required String tontineId,
     required String uid,
@@ -901,8 +947,11 @@ abstract final class TontineWrites {
     required int membersLimit,
     required String payoutOrderMethod,
     required DateTime startDate,
+    String type = 'group',
+    String? sponsorId,
   }) {
     final String pot = FinanceLedger.tontineAccountId(tontineId);
+    final bool isProfessional = type == 'professional';
     return [
       FinanceWrite('tontines/$tontineId', 'create', {
         'id': tontineId,
@@ -916,8 +965,10 @@ abstract final class TontineWrites {
         'payoutOrderMethod': payoutOrderMethod,
         'startDate': _ts(startDate),
         'status': 'forming',
+        'type': type,
+        if (sponsorId != null && sponsorId.isNotEmpty) 'sponsorId': sponsorId,
         'adminIds': [uid],
-        'memberIds': [uid],
+        'memberIds': isProfessional ? <String>[] : [uid],
         'currentCycle': 0,
         'potAccountId': pot,
         'createdBy': uid,
@@ -933,7 +984,8 @@ abstract final class TontineWrites {
         'email': email,
         'role': 'admin',
         'status': 'active',
-        'payoutPosition': 1,
+        if (!isProfessional) 'payoutPosition': 1,
+        if (sponsorId != null && sponsorId.isNotEmpty) 'sponsoredBy': sponsorId,
         'joinedAt': FieldValue.serverTimestamp(),
         'createdAt': FieldValue.serverTimestamp(),
       }),
@@ -960,30 +1012,34 @@ abstract final class TontineWrites {
     required String inviteeName,
     required String inviteeEmail,
     bool again = false,
-  }) =>
-      [
-        FinanceWrite('tontine_members/${memberId(t.id, inviteeUid)}', again ? 'update' : 'create', {
-          'id': memberId(t.id, inviteeUid),
-          'tontineId': t.id,
-          'tontineName': t.name,
-          'userId': inviteeUid,
-          'displayName': inviteeName,
-          'email': inviteeEmail,
-          'role': 'member',
-          'status': 'invited',
-          'invitedBy': inviterUid,
-          'invitedByName': inviterName,
-          'contributionAmount': t.contributionAmount,
-          'currency': t.currency,
-          'frequency': t.frequency,
-          'membersLimit': t.membersLimit,
-          if (t.startDate != null) 'startDate': _ts(t.startDate!),
-          'rules': t.rules,
-          'payoutOrderMethod': t.payoutOrderMethod,
-          'invitedAt': FieldValue.serverTimestamp(),
-          if (!again) 'createdAt': FieldValue.serverTimestamp(),
-        }),
-      ];
+    String? sponsorId,
+  }) {
+    final String? effectiveSponsor = sponsorId ?? t.sponsorId;
+    return [
+      FinanceWrite('tontine_members/${memberId(t.id, inviteeUid)}', again ? 'update' : 'create', {
+        'id': memberId(t.id, inviteeUid),
+        'tontineId': t.id,
+        'tontineName': t.name,
+        'userId': inviteeUid,
+        'displayName': inviteeName,
+        'email': inviteeEmail,
+        'role': 'member',
+        'status': 'invited',
+        'invitedBy': inviterUid,
+        'invitedByName': inviterName,
+        if (effectiveSponsor != null && effectiveSponsor.isNotEmpty) 'sponsoredBy': effectiveSponsor,
+        'contributionAmount': t.contributionAmount,
+        'currency': t.currency,
+        'frequency': t.frequency,
+        'membersLimit': t.membersLimit,
+        if (t.startDate != null) 'startDate': _ts(t.startDate!),
+        'rules': t.rules,
+        'payoutOrderMethod': t.payoutOrderMethod,
+        'invitedAt': FieldValue.serverTimestamp(),
+        if (!again) 'createdAt': FieldValue.serverTimestamp(),
+      }),
+    ];
+  }
 
   /// The invitee's answer: own member document `active` (and `memberIds`
   /// += self) or `declined`.
@@ -1201,6 +1257,18 @@ abstract final class TontineWrites {
     ]);
   }
 
+  /// An association administrator removes a member (`removed`).
+  static List<FinanceWrite> removeMember(String tontineId, String uid) => [
+        FinanceWrite('tontine_members/${memberId(tontineId, uid)}', 'update', {
+          'status': 'removed',
+          'removedAt': FieldValue.serverTimestamp(),
+        }),
+        FinanceWrite('tontines/$tontineId', 'update', {
+          'memberIds': FieldValue.arrayRemove([uid]),
+          'updatedAt': FieldValue.serverTimestamp(),
+        }),
+      ];
+
   /// A dispute raised by an active member (`open`), for the admins.
   static List<FinanceWrite> dispute({
     required String disputeId,
@@ -1223,3 +1291,97 @@ abstract final class TontineWrites {
         }),
       ];
 }
+
+/// Salary declared and confirmed for professional tontines (`member_salaries/{tontineId}_{uid}`).
+class MemberSalary {
+  final String tontineId;
+  final String userId;
+  final int monthlySalary;
+  final String currency;
+  final DateTime? declaredAt;
+  final String? confirmedBy;
+  final DateTime? confirmedAt;
+
+  const MemberSalary({
+    required this.tontineId,
+    required this.userId,
+    required this.monthlySalary,
+    required this.currency,
+    required this.declaredAt,
+    this.confirmedBy,
+    this.confirmedAt,
+  });
+
+  bool get isConfirmed => confirmedBy != null && confirmedAt != null;
+  int get salaryCap => (monthlySalary / 3).floor();
+
+  static MemberSalary fromMap(Map<String, dynamic> m, DateTime? Function(dynamic) toDate) => MemberSalary(
+        tontineId: m['tontineId']?.toString() ?? '',
+        userId: m['userId']?.toString() ?? '',
+        monthlySalary: _int(m['monthlySalary']),
+        currency: m['currency']?.toString() ?? '',
+        declaredAt: toDate(m['declaredAt']),
+        confirmedBy: m['confirmedBy']?.toString(),
+        confirmedAt: toDate(m['confirmedAt']),
+      );
+}
+
+abstract final class SalaryWrites {
+  static String salaryId(String tontineId, String uid) => '${tontineId}_$uid';
+
+  static List<FinanceWrite> declare({
+    required String tontineId,
+    required String uid,
+    required int monthlySalary,
+    required String currency,
+  }) =>
+      [
+        FinanceWrite('member_salaries/${salaryId(tontineId, uid)}', 'set', {
+          'tontineId': tontineId,
+          'userId': uid,
+          'monthlySalary': monthlySalary,
+          'currency': currency,
+          'declaredAt': FieldValue.serverTimestamp(),
+          'confirmedBy': null,
+          'confirmedAt': null,
+        }),
+      ];
+
+  static List<FinanceWrite> confirm({
+    required String tontineId,
+    required String uid,
+    required String adminUid,
+  }) =>
+      [
+        FinanceWrite('member_salaries/${salaryId(tontineId, uid)}', 'update', {
+          'confirmedBy': adminUid,
+          'confirmedAt': FieldValue.serverTimestamp(),
+        }),
+      ];
+}
+
+/// A member blacklisted in a tontine due to unpaid debt (`tontine_blacklist/{tontineId}_{uid}`).
+class TontineBlacklistEntry {
+  final String tontineId;
+  final String userId;
+  final String displayName;
+  final String loanId;
+  final DateTime? since;
+
+  const TontineBlacklistEntry({
+    required this.tontineId,
+    required this.userId,
+    required this.displayName,
+    required this.loanId,
+    required this.since,
+  });
+
+  static TontineBlacklistEntry fromMap(Map<String, dynamic> m, DateTime? Function(dynamic) toDate) => TontineBlacklistEntry(
+        tontineId: m['tontineId']?.toString() ?? '',
+        userId: m['userId']?.toString() ?? '',
+        displayName: m['displayName']?.toString() ?? '',
+        loanId: m['loanId']?.toString() ?? '',
+        since: toDate(m['since']),
+      );
+}
+

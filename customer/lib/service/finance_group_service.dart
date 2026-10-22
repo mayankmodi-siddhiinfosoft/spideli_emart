@@ -325,12 +325,54 @@ abstract final class FinanceGroupService {
 
   // ── Tontines ──────────────────────────────────────────────────────────
 
-  static Stream<List<Tontine>> myTontines() => _db
-      .collection('tontines')
-      .where('memberIds', arrayContains: _uid)
-      .orderBy('createdAt', descending: true)
-      .snapshots()
-      .map((s) => s.docs.map((d) => Tontine.fromMap({...d.data(), 'id': d.id}, toDate)).toList());
+  static Stream<List<Tontine>> myTontines() {
+    final memberStream = _db
+        .collection('tontines')
+        .where('memberIds', arrayContains: _uid)
+        .snapshots();
+    final adminStream = _db
+        .collection('tontines')
+        .where('adminIds', arrayContains: _uid)
+        .snapshots();
+
+    late StreamController<List<Tontine>> controller;
+    List<Tontine> memberTontines = [];
+    List<Tontine> adminTontines = [];
+    StreamSubscription? sub1;
+    StreamSubscription? sub2;
+
+    void emit() {
+      final map = <String, Tontine>{};
+      for (final t in [...memberTontines, ...adminTontines]) {
+        map[t.id] = t;
+      }
+      final list = map.values.toList()
+        ..sort((a, b) => (b.startDate ?? DateTime(0)).compareTo(a.startDate ?? DateTime(0)));
+      if (!controller.isClosed) controller.add(list);
+    }
+
+    controller = StreamController<List<Tontine>>.broadcast(
+      onListen: () {
+        sub1 = memberStream.listen((s) {
+          memberTontines = s.docs.map((d) => Tontine.fromMap({...d.data(), 'id': d.id}, toDate)).toList();
+          emit();
+        }, onError: (e) {
+          if (!controller.isClosed) controller.addError(e);
+        });
+        sub2 = adminStream.listen((s) {
+          adminTontines = s.docs.map((d) => Tontine.fromMap({...d.data(), 'id': d.id}, toDate)).toList();
+          emit();
+        }, onError: (e) {
+          if (!controller.isClosed) controller.addError(e);
+        });
+      },
+      onCancel: () {
+        sub1?.cancel();
+        sub2?.cancel();
+      },
+    );
+    return controller.stream;
+  }
 
   /// The user's pending invitations (`tontine_members`, status `invited`).
   static Stream<List<Map<String, dynamic>>> tontineInvitations() => _db
@@ -378,6 +420,27 @@ abstract final class FinanceGroupService {
       .snapshots()
       .map((s) => s.docs.map((d) => d.data()).toList());
 
+  /// The user's salary declaration in [tontineId] (professional tontines, spec section 3).
+  static Stream<MemberSalary?> mySalary(String tontineId) => _db
+      .collection('member_salaries')
+      .doc(SalaryWrites.salaryId(tontineId, _uid))
+      .snapshots()
+      .map((s) => s.data() == null ? null : MemberSalary.fromMap(s.data()!, toDate));
+
+  /// All salary declarations for a professional tontine (accessible by admins).
+  static Stream<List<MemberSalary>> tontineSalaries(String tontineId) => _db
+      .collection('member_salaries')
+      .where('tontineId', isEqualTo: tontineId)
+      .snapshots()
+      .map((s) => s.docs.map((d) => MemberSalary.fromMap(d.data(), toDate)).toList());
+
+  /// Blacklisted members of a tontine (spec section 6).
+  static Stream<List<TontineBlacklistEntry>> blacklist(String tontineId) => _db
+      .collection('tontine_blacklist')
+      .where('tontineId', isEqualTo: tontineId)
+      .snapshots()
+      .map((s) => s.docs.map((d) => TontineBlacklistEntry.fromMap(d.data(), toDate)).toList());
+
   /// The user's own `users/{uid}` as stored now (its `financeRestriction`).
   static Future<Map<String, dynamic>?> _me() => _existing('users/${_signedIn()}');
 
@@ -406,11 +469,26 @@ abstract final class FinanceGroupService {
     required int membersLimit,
     required String payoutOrderMethod,
     required DateTime startDate,
+    String type = 'group',
+    String? sponsorId,
   }) =>
       _write(() async {
         final String uid = _signedIn();
         final String? restricted = TontineWrites.restrictionBlocker(await _me());
         if (restricted != null) throw FinanceException(restricted);
+        if (type == 'professional') {
+          final me = await _me();
+          final bp = me?['businessProfile'];
+          if (bp == null || bp['status'] != 'approved' || (bp['kind'] ?? 'company') != 'company') {
+            throw const FinanceException('permission_denied');
+          }
+        } else if (type == 'association') {
+          final me = await _me();
+          final bp = me?['businessProfile'];
+          if (bp == null || bp['status'] != 'approved' || bp['kind'] != 'association') {
+            throw const FinanceException('permission_denied');
+          }
+        }
         final String regionId = await FinanceRegion.require();
         final cfg = await tontineConfig(regionId: regionId);
         if (cfg == null ||
@@ -422,6 +500,7 @@ abstract final class FinanceGroupService {
           throw const FinanceException('invalid_state');
         }
         if (contributionAmount < cfg.minFor(currency)) throw const FinanceException('below_minimum');
+        final effectiveSponsor = sponsorId ?? (type == 'group' ? null : uid);
         return FinanceRequestKeys.send('tontine.create', '$name/$currency/$frequency/$membersLimit', contributionAmount, {'method': payoutOrderMethod}, (key) async {
           final String tontineId = key;
           final existing = await _existing('tontines/$tontineId');
@@ -440,6 +519,8 @@ abstract final class FinanceGroupService {
             membersLimit: membersLimit,
             payoutOrderMethod: payoutOrderMethod,
             startDate: startDate,
+            type: type,
+            sponsorId: effectiveSponsor,
           ), regionId));
           return tontineId;
         });
@@ -628,7 +709,43 @@ abstract final class FinanceGroupService {
           FinancePeople.push('tontine_dispute_raised', t.adminIds, {'tontineId': tontineId, 'disputeId': key}, {'tontineName': t.name, 'subject': subject});
         });
       });
+
+  /// An association or tontine admin removes a member (`tontine_members/{tid}_{uid}.status = 'removed'`).
+  static Future<void> removeMember(String tontineId, String memberUid) => _write(() async {
+        final String uid = _signedIn();
+        final t = await _tontineNow(tontineId);
+        if (!t.isAdmin(uid)) throw const FinanceException('permission_denied');
+        if (memberUid == uid) throw const FinanceException('cannot_remove_self');
+        await _commit(TontineWrites.removeMember(tontineId, memberUid));
+      });
+
+  /// A member declares their monthly salary in a professional tontine (`member_salaries/{tid}_{uid}`).
+  static Future<void> declareSalary({required String tontineId, required int monthlySalary, required String currency}) => _write(() async {
+        final String uid = _signedIn();
+        final t = await _tontineNow(tontineId);
+        if (!t.memberIds.contains(uid)) throw const FinanceException('permission_denied');
+        if (monthlySalary <= 0) throw const FinanceException('amount_out_of_range');
+        await _commit(SalaryWrites.declare(
+          tontineId: tontineId,
+          uid: uid,
+          monthlySalary: monthlySalary,
+          currency: currency,
+        ));
+      });
+
+  /// An HR admin confirms an employee's declared salary in a professional tontine.
+  static Future<void> confirmSalary({required String tontineId, required String employeeUid}) => _write(() async {
+        final String uid = _signedIn();
+        final t = await _tontineNow(tontineId);
+        if (!t.isAdmin(uid)) throw const FinanceException('permission_denied');
+        await _commit(SalaryWrites.confirm(
+          tontineId: tontineId,
+          uid: employeeUid,
+          adminUid: uid,
+        ));
+      });
 }
+
 
 /// A Spideli account as the finance groups need it: found by email, named,
 /// reached by push (`users/{uid}`, readable by signed-in users).

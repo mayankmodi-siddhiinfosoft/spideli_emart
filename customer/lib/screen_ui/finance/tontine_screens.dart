@@ -1,13 +1,17 @@
+import 'dart:math' as math;
+
 import 'package:customer/screen_ui/finance/fin_ds.dart';
 import 'package:customer/screen_ui/finance/finance_chat_screens.dart';
 import 'package:customer/screen_ui/finance/finance_restriction.dart';
 import 'package:customer/screen_ui/finance/finance_ui.dart';
 import 'package:customer/screen_ui/finance/finance_widgets.dart';
 import 'package:customer/screen_ui/finance/savings_screens.dart';
+import 'package:customer/screen_ui/subscriptions/business_account_screen.dart';
 import 'package:customer/service/finance_chat_service.dart';
 import 'package:customer/service/finance_group_service.dart';
 import 'package:customer/service/finance_service.dart';
 import 'package:customer/themes/ds/ds.dart';
+import 'package:customer/utils/business_account.dart';
 import 'package:customer/utils/finance_group_rules.dart';
 import 'package:customer/utils/finance_rules.dart';
 import 'package:flutter/material.dart';
@@ -298,6 +302,7 @@ class _TontineFormScreenState extends State<TontineFormScreen> {
   late String _currency = widget.config.currencies.first;
   late String _frequency = widget.config.frequencies.first;
   late String _order = widget.config.payoutOrderMethods.first;
+  String _type = 'group';
   DateTime? _start;
 
   @override
@@ -325,6 +330,8 @@ class _TontineFormScreenState extends State<TontineFormScreen> {
         if (_validAmount == null) "Amount per member, per cycle".tr,
         if (_validLimit == null) "Number of members".tr,
         if (_start == null) "First contribution date".tr,
+        if (_type == 'professional' && !BusinessAccount.canCreateProfessionalTontine) "Approved company account".tr,
+        if (_type == 'association' && !BusinessAccount.canCreateAssociationTontine) "Approved association account".tr,
       ];
 
   Future<void> _save() async {
@@ -343,6 +350,7 @@ class _TontineFormScreenState extends State<TontineFormScreen> {
         membersLimit: limit,
         payoutOrderMethod: _order,
         startDate: _start!,
+        type: _type,
       );
     }, success: "Tontine created. Invite the members.");
     if (ok && id != null) Get.off(() => TontineScreen(tontineId: id!));
@@ -374,6 +382,51 @@ class _TontineFormScreenState extends State<TontineFormScreen> {
             top: 0,
             padding: _formPadding,
             children: [
+              DsFieldLabel("Tontine Type".tr, required: true),
+              Wrap(
+                spacing: DsSpace.sm,
+                runSpacing: DsSpace.xs,
+                children: [
+                  ChoiceChip(
+                    label: Text("Group".tr),
+                    selected: _type == 'group',
+                    onSelected: (_) => setState(() => _type = 'group'),
+                  ),
+                  ChoiceChip(
+                    label: Text("Professional (Company)".tr),
+                    selected: _type == 'professional',
+                    onSelected: (_) => setState(() => _type = 'professional'),
+                  ),
+                  ChoiceChip(
+                    label: Text("Association".tr),
+                    selected: _type == 'association',
+                    onSelected: (_) => setState(() => _type = 'association'),
+                  ),
+                ],
+              ),
+              const DsGap(DsSpace.md),
+              if (_type == 'professional' && !BusinessAccount.canCreateProfessionalTontine)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: DsSpace.md),
+                  child: DsInlineAlert(
+                    tone: DsTone.warning,
+                    title: "Company Account Required".tr,
+                    message: "Only verified company business accounts can create a professional tontine.".tr,
+                    actionLabel: "Verify Business".tr,
+                    onAction: () => Get.to(() => const BusinessAccountScreen())?.then((_) => setState(() {})),
+                  ),
+                ),
+              if (_type == 'association' && !BusinessAccount.canCreateAssociationTontine)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: DsSpace.md),
+                  child: DsInlineAlert(
+                    tone: DsTone.warning,
+                    title: "Association Account Required".tr,
+                    message: "Only verified association accounts can create an association tontine.".tr,
+                    actionLabel: "Verify Association".tr,
+                    onAction: () => Get.to(() => const BusinessAccountScreen())?.then((_) => setState(() {})),
+                  ),
+                ),
               DsTextField(label: "Name".tr, controller: _name, requiredMark: true, onChanged: (_) => setState(() {})),
               DsTextField(label: "Description".tr, controller: _description, maxLines: 2),
               DsTextField(label: "Rules agreed by the members".tr, hint: "Penalties for late payment, how disputes are settled...".tr, controller: _rules, maxLines: 4),
@@ -447,6 +500,7 @@ class _TontineFormScreenState extends State<TontineFormScreen> {
                 FinRow("Number of members".tr, '$limit'),
                 if (_start != null) FinRow("First contribution date".tr, _date(_start)),
                 FinRow("Who receives the pot first".tr, _orderLabel(_order).tr),
+                FinRow("Tontine type".tr, _type == 'professional' ? "Professional (Company)".tr : (_type == 'association' ? "Association".tr : "Group".tr)),
                 FinRow("Pot per cycle".tr, FinanceMoney.format(amount * limit, _currency), strong: true),
               ],
             ),
@@ -556,7 +610,14 @@ class _TontineHero extends StatelessWidget {
       label: (forming ? "Pot per cycle when full" : "Pot per cycle").tr,
       amount: FinanceMoney.format(forming ? t.contributionAmount * t.membersLimit : t.potPerCycle, t.currency),
       caption: '${"Amount per member, per cycle".tr}: ${FinanceMoney.format(t.contributionAmount, t.currency)}',
-      trailing: FinStatusChip(status: _st(t.status), label: Tontine.statusLabel(t.status).tr, icon: true),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          FinStatusChip(status: 'neutral', label: t.typeLabel.tr),
+          const DsGap(DsSpace.xs),
+          FinStatusChip(status: _st(t.status), label: Tontine.statusLabel(t.status).tr, icon: true),
+        ],
+      ),
       stats: [
         FinHeroStat("Frequency".tr, Frequency.label(t.frequency).tr),
         FinHeroStat("Members".tr, '${t.memberIds.length}/${t.membersLimit}'),
@@ -667,10 +728,13 @@ class _Overview extends StatelessWidget {
               },
             ),
           ),
+        if (t.isProfessional) _ProfessionalSalaryCard(tontine: t),
+        _TontineBlacklistCard(tontine: t),
         FinSection(
           title: "Details".tr,
           divided: true,
           children: [
+            FinRow("Type".tr, t.typeLabel.tr),
             if (t.description.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: DsSpace.md),
@@ -1120,6 +1184,14 @@ class _Members extends StatelessWidget {
                             ],
                           ),
                         ),
+                        if (t.isAssociation && t.isAdmin(uid) && m['userId'] != uid)
+                          DsButton.ghost(
+                            label: "Remove".tr,
+                            icon: Icons.person_remove_outlined,
+                            size: DsButtonSize.sm,
+                            tone: DsTone.danger,
+                            onPressed: () => _confirmRemoveMember(context, t.id, m['userId'].toString(), _nameOf(members, m['userId']?.toString(), t.memberIds)),
+                          ),
                         // A direct conversation with another member.
                         if (m['userId'] != uid && (m['userId'] ?? '').toString().isNotEmpty)
                           DsButton.ghost(
@@ -1394,3 +1466,209 @@ class _DisputeSheetState extends State<_DisputeSheet> {
     );
   }
 }
+
+void _confirmRemoveMember(BuildContext context, String tontineId, String memberUid, String name) {
+  Get.dialog(
+    AlertDialog(
+      title: Text("Remove Member".tr),
+      content: Text("Are you sure you want to remove @name from this association tontine?".trParams({'name': name})),
+      actions: [
+        TextButton(onPressed: () => Get.back(), child: Text("Cancel".tr)),
+        TextButton(
+          onPressed: () async {
+            Get.back();
+            await FinanceUi.run(
+              () => FinanceGroupService.removeMember(tontineId, memberUid),
+              success: "Member removed from tontine.".tr,
+            );
+          },
+          child: Text("Remove".tr, style: const TextStyle(color: Colors.red)),
+        ),
+      ],
+    ),
+  );
+}
+
+class _ProfessionalSalaryCard extends StatelessWidget {
+  final Tontine tontine;
+
+  const _ProfessionalSalaryCard({required this.tontine});
+
+  @override
+  Widget build(BuildContext context) {
+    final uid = FinanceService.uid;
+    final isHr = tontine.isAdmin(uid);
+    final isEmployee = tontine.memberIds.contains(uid);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (isEmployee)
+          StreamBuilder<MemberSalary?>(
+            stream: FinanceGroupService.mySalary(tontine.id),
+            builder: (context, snap) {
+              final s = snap.data;
+              return FinSection(
+                title: "My Salary & Loan Cap".tr,
+                divided: true,
+                children: [
+                  if (s == null)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: DsSpace.sm),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text("Declare your monthly salary to enable salary-capped loans (up to ⅓ of salary).".tr,
+                              style: DsTypography.caption.copyWith(color: DsColors.of(context).textSecondary)),
+                          const DsGap(DsSpace.sm),
+                          DsButton.secondary(
+                            label: "Declare monthly salary".tr,
+                            icon: Icons.payments_outlined,
+                            size: DsButtonSize.sm,
+                            onPressed: () => _showDeclareSalaryDialog(context, tontine),
+                          ),
+                        ],
+                      ),
+                    )
+                  else ...[
+                    FinRow("Declared salary".tr, FinanceMoney.format(s.monthlySalary, s.currency)),
+                    FinRow("Status".tr, s.isConfirmed ? "Confirmed by HR".tr : "Pending HR confirmation".tr,
+                        sub: s.confirmedAt != null ? _date(s.confirmedAt) : null),
+                    FinRow("Maximum loan cap (⅓)".tr, FinanceMoney.format(s.loanCap, s.currency), strong: true),
+                    if (!s.isConfirmed)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: DsSpace.xs),
+                        child: DsButton.ghost(
+                          label: "Update declared salary".tr,
+                          size: DsButtonSize.sm,
+                          onPressed: () => _showDeclareSalaryDialog(context, tontine, initialAmount: s.monthlySalary),
+                        ),
+                      ),
+                  ],
+                ],
+              );
+            },
+          ),
+        if (isHr)
+          StreamBuilder<List<MemberSalary>>(
+            stream: FinanceGroupService.tontineSalaries(tontine.id),
+            builder: (context, snap) {
+              final salaries = snap.data ?? const [];
+              if (salaries.isEmpty) return const SizedBox.shrink();
+              return FinSection(
+                title: "Employee Salaries (HR)".tr,
+                divided: true,
+                children: [
+                  for (final s in salaries)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: DsSpace.sm),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(s.userId == uid ? "You".tr : 'Employee (${s.userId.substring(0, math.min(6, s.userId.length))})',
+                                    style: DsTypography.bodyStrong.copyWith(color: DsColors.of(context).textPrimary)),
+                                Text('${FinanceMoney.format(s.monthlySalary, s.currency)} · Cap: ${FinanceMoney.format(s.loanCap, s.currency)}',
+                                    style: DsTypography.caption.copyWith(color: DsColors.of(context).textSecondary)),
+                              ],
+                            ),
+                          ),
+                          if (s.isConfirmed)
+                            FinStatusChip(status: 'completed', label: "Confirmed".tr)
+                          else
+                            DsButton.primary(
+                              label: "Confirm".tr,
+                              size: DsButtonSize.sm,
+                              onPressed: () async {
+                                await FinanceUi.run(
+                                  () => FinanceGroupService.confirmSalary(tontineId: tontine.id, employeeUid: s.userId),
+                                  success: "Salary confirmed".tr,
+                                );
+                              },
+                            ),
+                        ],
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
+      ],
+    );
+  }
+
+  static void _showDeclareSalaryDialog(BuildContext context, Tontine tontine, {int? initialAmount}) {
+    final controller = TextEditingController(text: initialAmount != null ? '$initialAmount' : '');
+    Get.dialog(
+      AlertDialog(
+        title: Text("Declare Monthly Salary".tr),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text("Enter your net monthly salary. In professional tontines, loans are capped at ⅓ of this confirmed salary.".tr,
+                style: DsTypography.bodySm),
+            const DsGap(DsSpace.md),
+            DsTextField(
+              label: "Monthly Salary (@curr)".trParams({'curr': tontine.currency}),
+              controller: controller,
+              keyboardType: TextInputType.number,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Get.back(), child: Text("Cancel".tr)),
+          TextButton(
+            onPressed: () async {
+              final int? val = int.tryParse(controller.text.trim());
+              if (val != null && val > 0) {
+                Get.back();
+                await FinanceUi.run(
+                  () => FinanceGroupService.declareSalary(tontineId: tontine.id, monthlySalary: val, currency: tontine.currency),
+                  success: "Salary declared. Awaiting HR confirmation.".tr,
+                );
+              }
+            },
+            child: Text("Save".tr),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TontineBlacklistCard extends StatelessWidget {
+  final Tontine tontine;
+
+  const _TontineBlacklistCard({required this.tontine});
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<List<TontineBlacklistEntry>>(
+      stream: FinanceGroupService.blacklist(tontine.id),
+      builder: (context, snap) {
+        final list = snap.data ?? const [];
+        if (list.isEmpty) return const SizedBox.shrink();
+        return FinSection(
+          title: "Tontine Blacklist (Unpaid Debt)".tr,
+          divided: true,
+          children: [
+            for (final b in list)
+              FinListTile(
+                icon: Icons.block_rounded,
+                iconTone: DsTone.danger,
+                title: b.displayName.isNotEmpty ? b.displayName : "Member".tr,
+                subtitle: "Defaulted loan · restricted since @date".trParams({'date': _date(b.since)}),
+                status: 'restricted',
+                statusLabel: "Blacklisted".tr,
+              ),
+          ],
+        );
+      },
+    );
+  }
+}
+
