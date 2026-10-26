@@ -117,6 +117,7 @@ class DsColors {
   /// Brand color: the active service section's color (runtime value of
   /// `AppThemeData.primary300`), or the [DsAccentScope] override.
   Color get brand => _brandOverride ?? AppThemeData.primary300;
+  Color get primary => brand;
 
   /// Darker (light mode) / lighter (dark mode) brand used for pressed states
   /// and for brand-colored text on surfaces. Guaranteed >= 4.5:1 on [surface].
@@ -217,6 +218,7 @@ class DsColors {
 
   // --------------------------------------------------------------- borders
   Color get border => isDark ? const Color(0xFF232C3B) : AppThemeData.grey200;
+  Color get borderSubtle => border;
   Color get borderStrong => isDark ? AppThemeData.grey700 : AppThemeData.grey300;
   Color get divider => isDark ? const Color(0xFF1C2431) : const Color(0xFFEDEFF3);
 

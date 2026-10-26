@@ -1,4 +1,4 @@
-package com.spideli.store
+package com.spideli.business.services
 
 import android.content.Context
 import android.content.Intent

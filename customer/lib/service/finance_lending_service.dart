@@ -231,7 +231,7 @@ abstract final class FinanceLendingService {
     final String uid = _signedIn();
     final loan = await _loanOnce(loanId);
     if (loan == null) throw const FinanceException('state_changed');
-    if (loan.guarantor?.userId != uid || loan.guarantor?.status != 'invited') throw const FinanceException('permission_denied');
+    if (loan.guarantorUserId != uid || loan.guarantorStatus != 'invited') throw const FinanceException('permission_denied');
     await _commit(FinanceRegion.stamp(LoanPlans.respondGuarantor(loanId, uid, accept), _regionOf(loan)));
     unawaited(_notify(accept ? 'loan_guarantor_accepted' : 'loan_guarantor_declined', [loan.borrowerId], loan, {
       'guarantorName': await _name(uid),

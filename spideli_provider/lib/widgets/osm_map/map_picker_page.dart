@@ -44,7 +44,7 @@ class MapPickerPage extends StatelessWidget {
               children: [
                 TileLayer(
                   urlTemplate: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-                  userAgentPackageName: 'com.spideli.store', // use your app package name
+                  userAgentPackageName: 'com.spideli.cm.provider', // use your app package name
                 ),
                 MarkerLayer(
                   markers: controller.pickedPlace.value != null

@@ -11,13 +11,15 @@
             <string>Editor</string>
             <key>CFBundleURLSchemes</key>
             <array>
-                <string>com.googleusercontent.apps.YOUR_REVERSED_IOS_CLIENT_ID</string>
+                <string>com.googleusercontent.apps.248496578266-26pmuaco4m95et6d4hl1uia8845q6tjn</string>
             </array>
         </dict>
     </array>
 
     <key>GIDClientID</key>
-    <string>YOUR_IOS_CLIENT_ID.apps.googleusercontent.com</string>
+    <string>248496578266-26pmuaco4m95et6d4hl1uia8845q6tjn.apps.googleusercontent.com</string>
+    <key>GIDServerClientID</key>
+    <string>248496578266-almm73oio98umbj2lbalovsemeerpoba.apps.googleusercontent.com</string>
 
     <key>NSCameraUsageDescription</key>
     <string>This app needs access to camera permission</string>

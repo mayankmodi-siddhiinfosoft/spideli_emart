@@ -1314,6 +1314,7 @@ class MemberSalary {
 
   bool get isConfirmed => confirmedBy != null && confirmedAt != null;
   int get salaryCap => (monthlySalary / 3).floor();
+  int get loanCap => salaryCap;
 
   static MemberSalary fromMap(Map<String, dynamic> m, DateTime? Function(dynamic) toDate) => MemberSalary(
         tontineId: m['tontineId']?.toString() ?? '',

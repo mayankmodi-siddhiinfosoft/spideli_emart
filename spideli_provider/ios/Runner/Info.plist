@@ -29,13 +29,15 @@
 			<string>Editor</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>com.googleusercontent.apps.841077018919-5buh5antor57030p2kovpgagm10jnjcs</string>
+				<string>com.googleusercontent.apps.248496578266-36msnf439h3kct41o5d6rs8vaqq9j0j5</string>
 			</array>
 		</dict>
 	</array>
 
 	<key>GIDClientID</key>
-	<string>841077018919-5buh5antor57030p2kovpgagm10jnjcs.apps.googleusercontent.com</string>
+	<string>248496578266-36msnf439h3kct41o5d6rs8vaqq9j0j5.apps.googleusercontent.com</string>
+	<key>GIDServerClientID</key>
+	<string>248496578266-almm73oio98umbj2lbalovsemeerpoba.apps.googleusercontent.com</string>
 
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>

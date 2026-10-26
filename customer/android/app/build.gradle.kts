@@ -19,7 +19,7 @@ if (keystorePropertiesFile.exists()) {
 }
 
 android {
-    namespace = "com.spideli.customer"
+    namespace = "com.app.spideli.customer.services"
     compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
@@ -30,7 +30,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.spideli.customer"
+        applicationId = "com.app.spideli.customer.services"
         minSdk = 26
         targetSdk = 36
         versionCode = flutter.versionCode
@@ -57,6 +57,11 @@ android {
             }
             isMinifyEnabled = false
             isShrinkResources = false
+        }
+        getByName("debug") {
+            if (keystorePropertiesFile.exists()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
 }

@@ -103,7 +103,7 @@ void main() {
         return;
       }
       final String driver = File('android/app/src/main/kotlin/com/emart/driver/OrderRingtone.kt').readAsStringSync();
-      expect(store.readAsStringSync().replaceFirst('package com.spideli.store', 'package com.spideli.driver'), driver);
+      expect(store.readAsStringSync().replaceFirst('package com.spideli.business.services', 'package com.app.spideli.driver.services'), driver);
       String ringtonePart(String s) => s.substring(s.indexOf('// MARK: - Order ringtone'));
       expect(ringtonePart(File('../vendor/ios/Runner/AppDelegate.swift').readAsStringSync()), ringtonePart(File('ios/Runner/AppDelegate.swift').readAsStringSync()));
     });

@@ -3,11 +3,13 @@
 <plist version="1.0">
 <dict>
 	<key>CLIENT_ID</key>
-	<string>248496578266-r0ql66343frkt87sho5ji4isrfbb57jo.apps.googleusercontent.com</string>
+	<string>248496578266-26pmuaco4m95et6d4hl1uia8845q6tjn.apps.googleusercontent.com</string>
 	<key>REVERSED_CLIENT_ID</key>
-	<string>com.googleusercontent.apps.248496578266-r0ql66343frkt87sho5ji4isrfbb57jo</string>
+	<string>com.googleusercontent.apps.248496578266-26pmuaco4m95et6d4hl1uia8845q6tjn</string>
+	<key>SERVER_CLIENT_ID</key>
+	<string>248496578266-almm73oio98umbj2lbalovsemeerpoba.apps.googleusercontent.com</string>
 	<key>ANDROID_CLIENT_ID</key>
-	<string>248496578266-aekmvciqstpqc7ltp2j0hqk00iu1mnhv.apps.googleusercontent.com</string>
+	<string>248496578266-26mh1cnbm4cf4o553oiqsla8ti32e0pe.apps.googleusercontent.com</string>
 	<key>API_KEY</key>
 	<string>AIzaSyD9TJqm8QMhtpBCjbO6DAMDxxtaPXX_2jU</string>
 	<key>GCM_SENDER_ID</key>
@@ -15,7 +17,7 @@
 	<key>PLIST_VERSION</key>
 	<string>1</string>
 	<key>BUNDLE_ID</key>
-	<string>com.spideli.customer</string>
+	<string>com.app.spideli.customer.services</string>
 	<key>PROJECT_ID</key>
 	<string>spideli-870b0</string>
 	<key>STORAGE_BUCKET</key>
@@ -31,7 +33,7 @@
 	<key>IS_SIGNIN_ENABLED</key>
 	<true></true>
 	<key>GOOGLE_APP_ID</key>
-	<string>1:248496578266:ios:93bf991499197942b70fe3</string>
+	<string>1:248496578266:ios:e3fc4aa00e53f141b70fe3</string>
 	<key>DATABASE_URL</key>
 	<string>https://spideli-870b0-default-rtdb.firebaseio.com</string>
 </dict>

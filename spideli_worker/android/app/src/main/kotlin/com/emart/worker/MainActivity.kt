@@ -1,4 +1,4 @@
-package com.spideli.worker
+package com.app.spideli.worker.services
 
 import android.app.AppOpsManager
 import android.content.ComponentName

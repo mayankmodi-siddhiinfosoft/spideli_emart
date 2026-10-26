@@ -166,7 +166,7 @@ class CabHomeScreen extends StatelessWidget {
                   mapController: controller.osmMapController,
                   options: flutterMap.MapOptions(initialCenter: controller.current.value, initialZoom: 16),
                   children: [
-                    flutterMap.TileLayer(urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', userAgentPackageName: 'com.spideli.driver'),
+                    flutterMap.TileLayer(urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', userAgentPackageName: 'com.app.spideli.driver.services'),
                     // GetBuilder works inside flutter_map's LayoutBuilder; Obx does not
                     GetBuilder<CabHomeController>(builder: (c) => flutterMap.MarkerLayer(markers: c.osmMarkers)),
                     GetBuilder<CabHomeController>(

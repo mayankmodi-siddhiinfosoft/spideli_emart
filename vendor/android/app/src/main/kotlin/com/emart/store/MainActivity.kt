@@ -1,4 +1,4 @@
-package com.spideli.store
+package com.spideli.business.services
 
 import android.app.AppOpsManager
 import android.content.ComponentName

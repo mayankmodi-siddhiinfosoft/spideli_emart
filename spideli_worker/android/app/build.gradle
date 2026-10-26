@@ -33,7 +33,7 @@ if (keystorePropertiesFile.exists()) {
 }
 
 android {
-    namespace "com.spideli.worker"
+    namespace "com.app.spideli.worker.services"
     compileSdkVersion 36
     ndkVersion '28.2.13676358'
 
@@ -50,7 +50,7 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId "com.spideli.worker"
+        applicationId "com.app.spideli.worker.services"
         // You can update the following values to match your application needs.
         // For more information, see: https://docs.flutter.dev/deployment/android#reviewing-the-gradle-build-configuration.
         minSdkVersion 24
@@ -70,6 +70,12 @@ android {
 
     buildTypes {
         release {
+            signingConfig keystorePropertiesFile.exists() ? signingConfigs.release : signingConfigs.debug
+            firebaseCrashlytics {
+                mappingFileUploadEnabled false
+            }
+        }
+        debug {
             signingConfig keystorePropertiesFile.exists() ? signingConfigs.release : signingConfigs.debug
         }
     }

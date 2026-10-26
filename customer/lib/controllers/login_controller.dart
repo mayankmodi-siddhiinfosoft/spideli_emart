@@ -277,7 +277,13 @@ class LoginController extends GetxController {
     try {
       final GoogleSignIn googleSignIn = GoogleSignIn.instance;
 
-      await googleSignIn.initialize();
+      try {
+        await googleSignIn.initialize(
+          serverClientId: '248496578266-almm73oio98umbj2lbalovsemeerpoba.apps.googleusercontent.com',
+        );
+      } catch (_) {
+        // Already initialized
+      }
 
       final GoogleSignInAccount googleUser = await googleSignIn.authenticate();
       if (googleUser.id.isEmpty) return null;

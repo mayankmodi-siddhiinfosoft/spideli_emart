@@ -14,6 +14,7 @@ abstract final class DsTypography {
   static const TextStyle displayLg = TextStyle(fontFamily: family, fontSize: 34, height: 40 / 34, fontWeight: FontWeight.w700, letterSpacing: -0.6);
   static const TextStyle display = TextStyle(fontFamily: family, fontSize: 28, height: 34 / 28, fontWeight: FontWeight.w700, letterSpacing: -0.4);
   static const TextStyle headline = TextStyle(fontFamily: family, fontSize: 22, height: 28 / 22, fontWeight: FontWeight.w700, letterSpacing: -0.2);
+  static const TextStyle h2 = headline;
   static const TextStyle title = TextStyle(fontFamily: family, fontSize: 18, height: 24 / 18, fontWeight: FontWeight.w600, letterSpacing: -0.1);
   static const TextStyle titleSm = TextStyle(fontFamily: family, fontSize: 16, height: 22 / 16, fontWeight: FontWeight.w600);
   static const TextStyle bodyLg = TextStyle(fontFamily: family, fontSize: 16, height: 24 / 16, fontWeight: FontWeight.w400);

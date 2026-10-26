@@ -613,7 +613,7 @@ class _TontineHero extends StatelessWidget {
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          FinStatusChip(status: 'neutral', label: t.typeLabel.tr),
+          FinStatusChip(status: 'neutral', label: Tontine.typeLabel(t.type).tr),
           const DsGap(DsSpace.xs),
           FinStatusChip(status: _st(t.status), label: Tontine.statusLabel(t.status).tr, icon: true),
         ],
@@ -734,7 +734,7 @@ class _Overview extends StatelessWidget {
           title: "Details".tr,
           divided: true,
           children: [
-            FinRow("Type".tr, t.typeLabel.tr),
+            FinRow("Type".tr, Tontine.typeLabel(t.type).tr),
             if (t.description.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: DsSpace.md),
@@ -1189,7 +1189,7 @@ class _Members extends StatelessWidget {
                             label: "Remove".tr,
                             icon: Icons.person_remove_outlined,
                             size: DsButtonSize.sm,
-                            tone: DsTone.danger,
+                            color: c.dangerStrong,
                             onPressed: () => _confirmRemoveMember(context, t.id, m['userId'].toString(), _nameOf(members, m['userId']?.toString(), t.memberIds)),
                           ),
                         // A direct conversation with another member.

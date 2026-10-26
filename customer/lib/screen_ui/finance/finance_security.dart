@@ -180,7 +180,9 @@ abstract final class FinanceReauth {
   static Future<bool> _google(User user) async {
     final g = GoogleSignIn.instance;
     try {
-      await g.initialize();
+      await g.initialize(
+        serverClientId: '248496578266-almm73oio98umbj2lbalovsemeerpoba.apps.googleusercontent.com',
+      );
     } catch (_) {
       // Already initialised.
     }

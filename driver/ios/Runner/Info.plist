@@ -31,14 +31,16 @@
 			<string>Editor</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>com.googleusercontent.apps.YOUR_REVERSED_IOS_CLIENT_ID</string>
+				<string>com.googleusercontent.apps.248496578266-vsb27k3ceb20tm6sj1ddc18nfftsde8q</string>
 			</array>
 		</dict>
 	</array>
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>GIDClientID</key>
-	<string>YOUR_IOS_CLIENT_ID.apps.googleusercontent.com</string>
+	<string>248496578266-vsb27k3ceb20tm6sj1ddc18nfftsde8q.apps.googleusercontent.com</string>
+	<key>GIDServerClientID</key>
+	<string>248496578266-almm73oio98umbj2lbalovsemeerpoba.apps.googleusercontent.com</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>LSApplicationQueriesSchemes</key>

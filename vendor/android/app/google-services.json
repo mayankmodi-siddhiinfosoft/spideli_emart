@@ -8,18 +8,18 @@
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:248496578266:android:11a3961a3ce03f56b70fe3",
+        "mobilesdk_app_id": "1:248496578266:android:37f434eab827503fb70fe3",
         "android_client_info": {
-          "package_name": "com.spideli.customer"
+          "package_name": "com.app.spideli.customer.services"
         }
       },
       "oauth_client": [
         {
-          "client_id": "248496578266-bnt22driro46qf4in0di9o5t5b1t928c.apps.googleusercontent.com",
+          "client_id": "248496578266-fl7qin92b3ropluug0rf4qhgp2c1rb38.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
-            "package_name": "com.spideli.customer",
-            "certificate_hash": "0925ce8ea7d4404dafe1c1e846996e01544ca4b1"
+            "package_name": "com.app.spideli.customer.services",
+            "certificate_hash": "cea7c1d0f56a6d20f411fcef9224d9c7a9b1c082"
           }
         },
         {
@@ -52,18 +52,18 @@
     },
     {
       "client_info": {
-        "mobilesdk_app_id": "1:248496578266:android:c7a55f0f4ebd1154b70fe3",
+        "mobilesdk_app_id": "1:248496578266:android:2c832621e6dc9414b70fe3",
         "android_client_info": {
-          "package_name": "com.spideli.driver"
+          "package_name": "com.app.spideli.driver.services"
         }
       },
       "oauth_client": [
         {
-          "client_id": "248496578266-gp9q3j3hdfj6v7j7b30bg56u6e7hpvue.apps.googleusercontent.com",
+          "client_id": "248496578266-40l26h7jr44cp57i218g8fbn14pnmutn.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
-            "package_name": "com.spideli.driver",
-            "certificate_hash": "9716abd76c408fea7f1709243cb92825a19efe8b"
+            "package_name": "com.app.spideli.driver.services",
+            "certificate_hash": "df871ce2e2f341869291a13819ff2734eae742b3"
           }
         },
         {
@@ -96,18 +96,18 @@
     },
     {
       "client_info": {
-        "mobilesdk_app_id": "1:248496578266:android:5652425455f4fbd4b70fe3",
+        "mobilesdk_app_id": "1:248496578266:android:bd7e7444757b36d4b70fe3",
         "android_client_info": {
-          "package_name": "com.spideli.provider"
+          "package_name": "com.app.spideli.worker.services"
         }
       },
       "oauth_client": [
         {
-          "client_id": "248496578266-6dru12a4eoithgoflep0c44ah28jlijr.apps.googleusercontent.com",
+          "client_id": "248496578266-9jfsf8420aeu16uumm431oiv1224i6vg.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
-            "package_name": "com.spideli.provider",
-            "certificate_hash": "ea8dc0d92004a6552837d248419bdbfb8bd1f10b"
+            "package_name": "com.app.spideli.worker.services",
+            "certificate_hash": "6afddf8a3326a5149a97651f06cc3692d0dc1728"
           }
         },
         {
@@ -140,18 +140,18 @@
     },
     {
       "client_info": {
-        "mobilesdk_app_id": "1:248496578266:android:522897bcb50d3bf1b70fe3",
+        "mobilesdk_app_id": "1:248496578266:android:d1bc2518d95d9c07b70fe3",
         "android_client_info": {
-          "package_name": "com.spideli.store"
+          "package_name": "com.spideli.business.services"
         }
       },
       "oauth_client": [
         {
-          "client_id": "248496578266-q45cqkf4g1h6shq9v9apmi2os7iknrcl.apps.googleusercontent.com",
+          "client_id": "248496578266-q74u307deifms1j94ijhotpkss3ho4j0.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
-            "package_name": "com.spideli.store",
-            "certificate_hash": "0ccbc27a214275ce18f559ca7479ad1e825d7a54"
+            "package_name": "com.spideli.business.services",
+            "certificate_hash": "9e416d83e4d5981fd157fbb9b4b3f7e94845eaec"
           }
         },
         {
@@ -184,18 +184,18 @@
     },
     {
       "client_info": {
-        "mobilesdk_app_id": "1:248496578266:android:7db2aa73d7de230ab70fe3",
+        "mobilesdk_app_id": "1:248496578266:android:41e9a78171822b57b70fe3",
         "android_client_info": {
-          "package_name": "com.spideli.worker"
+          "package_name": "com.spideli.cm.provider"
         }
       },
       "oauth_client": [
         {
-          "client_id": "248496578266-gvsnbc3lsvt9m5724k0j2sj5iehm7nmn.apps.googleusercontent.com",
+          "client_id": "248496578266-ur2cd00gfquo4kv3a59jdb1mkv8sdl3n.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
-            "package_name": "com.spideli.worker",
-            "certificate_hash": "ef36ea11358e68e7717db72332482050767d0f5c"
+            "package_name": "com.spideli.cm.provider",
+            "certificate_hash": "16be99ca0ae2de070f1217651ce23037894da5cf"
           }
         },
         {

@@ -59,7 +59,7 @@ class StoreLocationPreview extends StatelessWidget {
       key: ValueKey('store-preview-osm-$latitude,$longitude'),
       options: osm.MapOptions(initialCenter: point, initialZoom: 15, interactionOptions: const osm.InteractionOptions(flags: osm.InteractiveFlag.none)),
       children: [
-        osm.TileLayer(urlTemplate: "https://tile.openstreetmap.org/{z}/{x}/{y}.png", userAgentPackageName: 'com.spideli.store'),
+        osm.TileLayer(urlTemplate: "https://tile.openstreetmap.org/{z}/{x}/{y}.png", userAgentPackageName: 'com.spideli.business.services'),
         osm.MarkerLayer(
           markers: [
             osm.Marker(point: point, width: 40, height: 40, alignment: Alignment.topCenter, child: Icon(Icons.location_on_rounded, size: 40, color: pin)),

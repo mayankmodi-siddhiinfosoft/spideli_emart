@@ -56,7 +56,7 @@
 
         <!-- Main Activity (Kotlin-based) -->
         <activity
-            android:name="com.spideli.customer.MainActivity"
+            android:name="com.app.spideli.customer.services.MainActivity"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
             android:enableOnBackInvokedCallback="true"
             android:exported="true"
@@ -93,7 +93,7 @@
 
                 <data
                     android:host="paypalpay"
-                    android:scheme="com.spideli.customer" />
+                    android:scheme="com.app.spideli.customer.services" />
             </intent-filter>
 
             <!-- PayPal cancel redirect -->
@@ -105,7 +105,7 @@
 
                 <data
                     android:host="paypalcancel"
-                    android:scheme="com.spideli.customer" />
+                    android:scheme="com.app.spideli.customer.services" />
 
             </intent-filter>
 

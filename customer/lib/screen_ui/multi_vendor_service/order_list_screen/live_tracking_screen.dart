@@ -45,7 +45,7 @@ class LiveTrackingScreen extends StatelessWidget {
                           mapController: controller.osmMapController,
                           options: flutterMap.MapOptions(initialCenter: controller.initialTarget, initialZoom: 14, onMapReady: controller.onOsmMapReady),
                           children: [
-                            flutterMap.TileLayer(urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', userAgentPackageName: 'com.spideli.customer'),
+                            flutterMap.TileLayer(urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', userAgentPackageName: 'com.app.spideli.customer.services'),
                             if (controller.routePoints.isNotEmpty)
                               flutterMap.PolylineLayer(
                                 polylines: [flutterMap.Polyline(points: controller.routePoints.toList(), strokeWidth: 5.0, color: Colors.blue)],

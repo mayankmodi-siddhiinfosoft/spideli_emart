@@ -70,7 +70,7 @@ class CabBookingScreen extends StatelessWidget {
                             children: [
                               flutter_map.TileLayer(
                                 urlTemplate: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-                                userAgentPackageName: Platform.isAndroid ? "com.spideli.customer" : "com.spideli.customer.ios",
+                                userAgentPackageName: Platform.isAndroid ? "com.app.spideli.customer.services" : "com.app.spideli.customer.services.ios",
                               ),
                               flutter_map.MarkerLayer(markers: controller.osmMarker),
                               if (controller.routePoints.isNotEmpty)

@@ -24,6 +24,21 @@
 	<string>????</string>
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.248496578266-tgjhsljdsdhlstdqllismpratkuj3qau</string>
+			</array>
+		</dict>
+	</array>
+	<key>GIDClientID</key>
+	<string>248496578266-tgjhsljdsdhlstdqllismpratkuj3qau.apps.googleusercontent.com</string>
+	<key>GIDServerClientID</key>
+	<string>248496578266-almm73oio98umbj2lbalovsemeerpoba.apps.googleusercontent.com</string>
 	<key>FLTEnableImpeller</key>
 	<false/>
 	<key>ITSAppUsesNonExemptEncryption</key>

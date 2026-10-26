@@ -19,7 +19,7 @@ if (keystorePropertiesFile.exists()) {
 }
 
 android {
-    namespace = "com.spideli.store"
+    namespace = "com.spideli.business.services"
     // 37: permission_handler_android 14.1 (permission_handler 13) is built
     // against Android 17's SDK. targetSdk stays 36.
     compileSdk = 37
@@ -32,7 +32,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.spideli.store"
+        applicationId = "com.spideli.business.services"
         minSdk = 26
         targetSdk = 36
         versionCode = flutter.versionCode
@@ -59,6 +59,11 @@ android {
             }
             isMinifyEnabled = false
             isShrinkResources = false
+        }
+        getByName("debug") {
+            if (keystorePropertiesFile.exists()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
 }

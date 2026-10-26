@@ -1,4 +1,4 @@
-package com.spideli.provider
+package com.spideli.cm.provider
 
 import android.app.AppOpsManager
 import android.content.ComponentName

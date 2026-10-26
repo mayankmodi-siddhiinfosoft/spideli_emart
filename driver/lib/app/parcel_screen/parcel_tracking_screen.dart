@@ -41,7 +41,7 @@ class ParcelTrackingScreen extends StatelessWidget {
                       children: [
                         flutterMap.TileLayer(
                           urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                          userAgentPackageName: Platform.isAndroid ? 'com.spideli.driver' : 'com.spideli.driver',
+                          userAgentPackageName: Platform.isAndroid ? 'com.app.spideli.driver.services' : 'com.app.spideli.driver.services',
                         ),
                         flutterMap.MarkerLayer(markers: controller.osmMarkers),
                         if (controller.routePoints.isNotEmpty)

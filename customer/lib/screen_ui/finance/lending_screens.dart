@@ -780,7 +780,7 @@ class _LoanApplyScreenState extends State<LoanApplyScreen> {
                     label: "Group".tr,
                     requiredMark: true,
                     value: _groupId,
-                    options: [for (final g in groups) (g.id, '${g.name} (${g.typeLabel.tr})')],
+                    options: [for (final g in groups) (g.id, '${g.name} (${Tontine.typeLabel(g.type).tr})')],
                     onChanged: (v) async {
                       setState(() {
                         _groupId = v;

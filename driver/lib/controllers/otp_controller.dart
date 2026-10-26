@@ -35,16 +35,18 @@ class OtpController extends GetxController {
     await FirebaseAuth.instance.verifyPhoneNumber(
       phoneNumber: countryCode.value + phoneNumber.value,
       verificationCompleted: (PhoneAuthCredential credential) {},
-      verificationFailed: (FirebaseAuthException e) {},
+      verificationFailed: (FirebaseAuthException e) {
+        ShowToastDialog.showToast(e.message ?? "Failed to send OTP".tr);
+      },
       codeSent: (String verificationId0, int? resendToken0) async {
         verificationId.value = verificationId0;
-        resendToken.value = resendToken0!;
+        resendToken.value = resendToken0 ?? 0;
         ShowToastDialog.showToast("OTP sent".tr);
       },
       timeout: const Duration(seconds: 25),
-      forceResendingToken: resendToken.value,
+      forceResendingToken: resendToken.value != 0 ? resendToken.value : null,
       codeAutoRetrievalTimeout: (String verificationId0) {
-        verificationId0 = verificationId.value;
+        verificationId.value = verificationId0;
       },
     );
     return true;

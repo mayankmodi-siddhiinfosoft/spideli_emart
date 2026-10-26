@@ -710,8 +710,8 @@ class ParcelOrderConfirmationController extends GetxController {
               sandboxMode: payPalModel.value.isLive == true ? false : true,
               clientId: payPalModel.value.paypalClient ?? '',
               secretKey: payPalModel.value.paypalSecret ?? '',
-              returnURL: "com.spideli.customer://paypalpay",
-              cancelURL: "com.spideli.customer://paypalcancel",
+              returnURL: "com.app.spideli.customer.services://paypalpay",
+              cancelURL: "com.app.spideli.customer.services://paypalcancel",
 
               transactions: [
                 {
@@ -751,8 +751,8 @@ class ParcelOrderConfirmationController extends GetxController {
   //             secretKey: payPalModel.value.paypalSecret ?? '',
   //             returnURL: "https://success.spideli.com/return",
   //             cancelURL: "https://cancel.spideli.com/cancel",
-  //             // returnURL: "com.spideli.customer://paypalpay",
-  //             // cancelURL: "com.spideli.customer://paypalpay",
+  //             // returnURL: "com.app.spideli.customer.services://paypalpay",
+  //             // cancelURL: "com.app.spideli.customer.services://paypalpay",
   //             transactions: [
   //               {
   //                 "amount": {

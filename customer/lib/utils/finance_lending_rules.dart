@@ -471,6 +471,10 @@ class CreditScore {
     this.updatedAt,
   });
 
+  bool get isGood => band == 'good';
+  bool get isFair => band == 'fair';
+  String get bandLabel => band.isNotEmpty ? '${band[0].toUpperCase()}${band.substring(1)}' : 'Fair';
+
   static CreditScore fromMap(Map<String, dynamic> m, DateTime? Function(dynamic) toDate) => CreditScore(
         userId: m['userId']?.toString() ?? '',
         score: _int(m['score']),
@@ -486,6 +490,8 @@ class CreditFactor {
   final String detail;
 
   const CreditFactor({required this.label, required this.impact, required this.detail});
+
+  bool get isPositive => impact == 'positive';
 
   static CreditFactor fromMap(Map<String, dynamic> m) => CreditFactor(
         label: m['label']?.toString() ?? '',

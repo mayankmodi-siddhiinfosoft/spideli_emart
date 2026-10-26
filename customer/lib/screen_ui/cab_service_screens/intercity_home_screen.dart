@@ -68,7 +68,7 @@ class IntercityHomeScreen extends StatelessWidget {
                               initialZoom: 14,
                             ),
                             children: [
-                              flutter_map.TileLayer(urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', userAgentPackageName: 'com.spideli.customer'),
+                              flutter_map.TileLayer(urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', userAgentPackageName: 'com.app.spideli.customer.services'),
                               flutter_map.MarkerLayer(markers: controller.osmMarker),
                               if (controller.routePoints.isNotEmpty)
                                 flutter_map.PolylineLayer(

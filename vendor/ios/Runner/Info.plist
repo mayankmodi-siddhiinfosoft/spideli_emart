@@ -30,10 +30,14 @@
             <string>Editor</string>
             <key>CFBundleURLSchemes</key>
             <array>
-                <string>com.googleusercontent.apps.YOUR_REVERSED_IOS_CLIENT_ID</string>
+                <string>com.googleusercontent.apps.248496578266-3jq3lchbc89r7c4ob0pnb5s5bv1kueb2</string>
             </array>
         </dict>
     </array>
+    <key>GIDClientID</key>
+    <string>248496578266-3jq3lchbc89r7c4ob0pnb5s5bv1kueb2.apps.googleusercontent.com</string>
+    <key>GIDServerClientID</key>
+    <string>248496578266-almm73oio98umbj2lbalovsemeerpoba.apps.googleusercontent.com</string>
     <key>NSBluetoothPeripheralUsageDescription</key>
     <string>Bluetooth access to connect 58mm or 80mm thermal printers</string>
     <key>NSBluetoothAlwaysUsageDescription</key>
